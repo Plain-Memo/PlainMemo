@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Slime Invader v7.1</title>
+<title>Slime Invader v7.3</title>
 
 <style>
 html,body{margin:0;padding:0;background:black;overflow:hidden;touch-action:none;}
@@ -67,7 +67,7 @@ const stars=[...Array(120)].map(()=>({x:Math.random()*innerWidth,y:Math.random()
 
 /* ===== 状態 ===== */
 let px=innerWidth/2,score=0,wave=1,ready=true,over=false,clearing=false;
-let canShoot=true,holdL=false,holdR=false,life=3,invincible=0;
+let canShoot=true,holdL=false,holdR=false,life=3,invincible=0,safeTimer=0;
 let nextUfoTime = performance.now() + rand(10000,20000);
 
 /* ===== HUD ===== */
@@ -234,7 +234,12 @@ function spawnUFO(){
 
 /* ===== 表示 ===== */
 const msg=document.getElementById("msg");
-function showReady(){ ready=true; msg.textContent="READY"; setTimeout(()=>{msg.textContent=""; ready=false;},1200); }
+function showReady(){
+ ready=true;
+ safeTimer = wave * 30;   // ★ Wave × 0.5秒 無敵
+ msg.textContent="READY";
+ setTimeout(()=>{msg.textContent=""; ready=false;},1200);
+}
 function showClearThenNextWave(){
  clearing=true; msg.textContent="CLEAR!";
  setTimeout(()=>{
@@ -255,7 +260,7 @@ function reset(){
  bullets.forEach(b=>b.remove()); bullets.length=0;
  ebullets.forEach(b=>b.remove()); ebullets.length=0;
  if(ufo){ufo.el.remove();ufo=null;}
- score=0; wave=1; life=3; invincible=0; over=false; clearing=false;
+ score=0; wave=1; life=3; invincible=0; safeTimer=0; over=false; clearing=false;
  scoreEl.textContent=0; waveEl.textContent=1; lifeEl.textContent="❤️❤️❤️";
  px=innerWidth/2; canShoot=true; nextUfoTime=performance.now()+rand(10000,20000);
  spawnEnemies(); spawnShields(); updatePlayerColor(); showReady();
@@ -271,6 +276,8 @@ function hitXY(ax,ay,aw,ah,bx,by,bw,bh){
 function update(){
  const now = performance.now();
  if(invincible>0) invincible--;
+ if(safeTimer>0) safeTimer--;
+
  player.style.opacity = invincible>0 ? (Math.floor(invincible/5)%2?0.3:1) : 1;
 
  ctx.fillStyle="black";ctx.fillRect(0,0,bg.width,bg.height);
@@ -319,13 +326,21 @@ function update(){
  ebullets.forEach((b,i)=>{ b.y+=isMobile?5:8; b.style.top=b.y+"px"; if(b.y>innerHeight){b.remove();ebullets.splice(i,1);} });
 
  const prof=enemyProfile();
- fx+=dir*((isMobile?0.25:0.4)*prof.spd + wave*0.05);
- if(fx+cols*60>innerWidth-20||fx<20){ dir*=-1; fy+=Math.min((isMobile?6:10)*prof.drop+wave,18); }
+
+ // ★ Wave速度上昇 半分
+ fx+=dir*((isMobile?0.25:0.4)*prof.spd + wave*0.025);
+
+ if(fx+cols*60>innerWidth-20||fx<20){
+  dir*=-1;
+  fy+=Math.min((isMobile?4:10)*prof.drop + wave*0.5,18);
+ }
+
+ const hitLine = isMobile ? py()+20 : py()-10;
 
  enemies.forEach(e=>{
   e.x=fx+e.fx; e.y=fy+e.fy;
   e.el.style.left=e.x+"px"; e.el.style.top=e.y+"px";
-  if(invincible===0 && e.y+32>py()-10){
+  if(invincible===0 && safeTimer===0 && e.y+32 > hitLine){
    life--; lifeEl.textContent="❤️".repeat(life);
    explode(px,py()+20); invincible=60; fy-=40;
    if(life<=0) gameOver();
@@ -378,7 +393,7 @@ function update(){
 
  for(let i=ebullets.length-1;i>=0;i--){
   const b=ebullets[i];
-  if(invincible===0 && hitXY(b.x,b.y,4,12,px-32,py(),64,56)){
+  if(invincible===0 && safeTimer===0 && hitXY(b.x,b.y,4,12,px-32,py(),64,56)){
    life--; lifeEl.textContent="❤️".repeat(life);
    explode(px,py()+20); invincible=60;
    b.remove(); ebullets.splice(i,1);
