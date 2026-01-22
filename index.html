@@ -95,6 +95,8 @@ const waveEl  = document.getElementById("wave");
 const lifeEl  = document.getElementById("life");
 const msgEl   = document.getElementById("msg");
 
+
+let msgTimer = 0;
 /* ========= ゲーム状態 ========= */
 let score = 0;
 let wave  = 1;
@@ -413,11 +415,18 @@ function enemyShoot(){
 
 /* ========= Wave演出 ========= */
 function showReady(){
+  // メッセージの二重表示防止
+  clearTimeout(msgTimer);
+  msgEl.textContent = "";
+
   ready = true;
   safeTimer = Math.floor(wave * 0.5 * 60);
   msgEl.textContent = "READY";
-  setTimeout(()=>{
-    msgEl.textContent = "";
+  msgTimer = setTimeout(()=>{
+    // over中なら消さない（GAME OVER表示優先）
+    if(!over){
+      msgEl.textContent = "";
+    }
     ready = false;
   }, 900);
 }
@@ -441,6 +450,12 @@ function nextWave(){
 function gameOver(){
   if(over) return;
   over = true;
+
+  // READY/CLEAR のタイマーが残っていると重なるので止める
+  clearTimeout(msgTimer);
+  ready = false;
+  clearing = false;
+
   msgEl.innerHTML = "GAME OVER<br>Tap or Enter";
 }
 
@@ -451,7 +466,10 @@ function reset(){
   enemies.forEach(e=>e.el.remove()); enemies.length=0;
   shields.forEach(s=>s.el.remove()); shields.length=0;
 
-  score = 0; wave = 1; life = 3;
+  
+  clearTimeout(msgTimer);
+  msgEl.textContent = "";
+score = 0; wave = 1; life = 3;
   invincible = 0; safeTimer = 0;
   over = false; clearing = false;
 
