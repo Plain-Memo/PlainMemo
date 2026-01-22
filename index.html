@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Slime Invader v7.3</title>
+<title>Slime Invader v7.4</title>
 
 <style>
 html,body{margin:0;padding:0;background:black;overflow:hidden;touch-action:none;}
@@ -67,7 +67,7 @@ const stars=[...Array(120)].map(()=>({x:Math.random()*innerWidth,y:Math.random()
 
 /* ===== 状態 ===== */
 let px=innerWidth/2,score=0,wave=1,ready=true,over=false,clearing=false;
-let canShoot=true,holdL=false,holdR=false,life=3,invincible=0,safeTimer=0;
+let canShoot=true,holdL=false,holdR=false,life=3,invincible=0,safeTimer=0,waveStartTimer=0;
 let nextUfoTime = performance.now() + rand(10000,20000);
 
 /* ===== HUD ===== */
@@ -136,14 +136,10 @@ function spawnEnemies(){
  dir=1;
 
  const invaders = [
-  {a:["0100010","1111111","1011101","0100010"],
-   b:["0100010","1111111","0101010","1010101"]},
-  {a:["0011100","0111110","1101011","0111110"],
-   b:["0011100","1111111","0101010","1010101"]},
-  {a:["0110110","1111111","0101010","1010101"],
-   b:["0011100","0111110","1101011","0111110"]},
-  {a:["0011100","1111111","1010101","0100010"],
-   b:["0011100","0111110","0101010","1010101"]}
+  {a:["0100010","1111111","1011101","0100010"], b:["0100010","1111111","0101010","1010101"]},
+  {a:["0011100","0111110","1101011","0111110"], b:["0011100","1111111","0101010","1010101"]},
+  {a:["0110110","1111111","0101010","1010101"], b:["0011100","0111110","1101011","0111110"]},
+  {a:["0011100","1111111","1010101","0100010"], b:["0011100","0111110","0101010","1010101"]}
  ];
 
  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
@@ -236,7 +232,8 @@ function spawnUFO(){
 const msg=document.getElementById("msg");
 function showReady(){
  ready=true;
- safeTimer = wave * 30;   // ★ Wave × 0.5秒 無敵
+ safeTimer = wave * 30;
+ waveStartTimer = 120;
  msg.textContent="READY";
  setTimeout(()=>{msg.textContent=""; ready=false;},1200);
 }
@@ -260,7 +257,7 @@ function reset(){
  bullets.forEach(b=>b.remove()); bullets.length=0;
  ebullets.forEach(b=>b.remove()); ebullets.length=0;
  if(ufo){ufo.el.remove();ufo=null;}
- score=0; wave=1; life=3; invincible=0; safeTimer=0; over=false; clearing=false;
+ score=0; wave=1; life=3; invincible=0; safeTimer=0; waveStartTimer=0; over=false; clearing=false;
  scoreEl.textContent=0; waveEl.textContent=1; lifeEl.textContent="❤️❤️❤️";
  px=innerWidth/2; canShoot=true; nextUfoTime=performance.now()+rand(10000,20000);
  spawnEnemies(); spawnShields(); updatePlayerColor(); showReady();
@@ -277,8 +274,7 @@ function update(){
  const now = performance.now();
  if(invincible>0) invincible--;
  if(safeTimer>0) safeTimer--;
-
- player.style.opacity = invincible>0 ? (Math.floor(invincible/5)%2?0.3:1) : 1;
+ if(waveStartTimer>0) waveStartTimer--;
 
  ctx.fillStyle="black";ctx.fillRect(0,0,bg.width,bg.height);
  ctx.fillStyle="white";
@@ -294,7 +290,6 @@ function update(){
 
  if(ready||over||clearing){ requestAnimationFrame(update); return; }
 
- /* ===== 足パタパタ ===== */
  animTimer++;
  if(animTimer>30){
   animTimer=0;
@@ -306,10 +301,7 @@ function update(){
    sprite.forEach((row,y)=>[...row].forEach((v,x)=>{
     if(v==="1"){
      const p=e.el.children[i++];
-     if(p){
-      p.style.display="block";
-      p.style.left=x*8+"px"; p.style.top=y*8+"px";
-     }
+     if(p){p.style.display="block";p.style.left=x*8+"px";p.style.top=y*8+"px";}
     }
    }));
   });
@@ -326,13 +318,12 @@ function update(){
  ebullets.forEach((b,i)=>{ b.y+=isMobile?5:8; b.style.top=b.y+"px"; if(b.y>innerHeight){b.remove();ebullets.splice(i,1);} });
 
  const prof=enemyProfile();
-
- // ★ Wave速度上昇 半分
  fx+=dir*((isMobile?0.25:0.4)*prof.spd + wave*0.025);
 
- if(fx+cols*60>innerWidth-20||fx<20){
+ if((fx+cols*60>innerWidth-20||fx<20) && waveStartTimer===0){
   dir*=-1;
-  fy+=Math.min((isMobile?4:10)*prof.drop + wave*0.5,18);
+  const drop=(isMobile?3:10)*prof.drop + wave*0.5;
+  fy += isMobile ? Math.min(drop,8) : Math.min(drop,18);
  }
 
  const hitLine = isMobile ? py()+20 : py()-10;
@@ -340,10 +331,13 @@ function update(){
  enemies.forEach(e=>{
   e.x=fx+e.fx; e.y=fy+e.fy;
   e.el.style.left=e.x+"px"; e.el.style.top=e.y+"px";
-  if(invincible===0 && safeTimer===0 && e.y+32 > hitLine){
-   life--; lifeEl.textContent="❤️".repeat(life);
-   explode(px,py()+20); invincible=60; fy-=40;
-   if(life<=0) gameOver();
+  if(e.y+32 > hitLine){
+   fy -= 30;
+   if(invincible===0 && safeTimer===0){
+    life--; lifeEl.textContent="❤️".repeat(life);
+    explode(px,py()+20); invincible=60;
+    if(life<=0) gameOver();
+   }
   }
  });
 
@@ -354,7 +348,7 @@ function update(){
   b.className="ebullet"; b.x=e.x+28; b.y=e.y+32;
   b.style.left=b.x+"px"; b.style.top=b.y+"px";
   document.body.appendChild(b); ebullets.push(b);
-  enemyShootTimer=Math.max(40,120/(enemyProfile().fire));
+  enemyShootTimer=Math.max(60,160/(enemyProfile().fire));
  }
 
  for(let i=enemies.length-1;i>=0;i--)for(let j=bullets.length-1;j>=0;j--){
