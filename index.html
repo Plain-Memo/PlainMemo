@@ -2,10 +2,15 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>Invader Stable v6 (Full Canvas) + Stick + Pause</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<title>Invader Stable v6 + Stick + Pause (iOS26 No-Zoom)</title>
 <style>
-  html,body{margin:0;padding:0;background:#000;overflow:hidden;touch-action:none;}
+  html,body{
+    margin:0;padding:0;background:#000;overflow:hidden;
+    touch-action:none;
+    overscroll-behavior:none;
+    -webkit-text-size-adjust:100%;
+  }
   canvas{position:fixed;inset:0;display:block;touch-action:none;pointer-events:auto}
 
   #hud{
@@ -15,11 +20,13 @@
   }
 
   #pauseBtn{
-    position:fixed;top:10px;right:10px;z-index:60;
+    position:fixed;top:10px;right:10px;z-index:80;
     padding:8px 12px;font:700 14px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
     color:#fff;background:rgba(0,0,0,.55);
     border:2px solid rgba(255,255,255,.25);border-radius:10px;
     cursor:pointer;pointer-events:auto;user-select:none;
+    touch-action:manipulation;
+    -webkit-tap-highlight-color: transparent;
   }
 
   #msg{
@@ -30,11 +37,17 @@
   }
 
   /* ===== Mobile controls ===== */
-  .controls{position:fixed;inset:0;z-index:50;pointer-events:none}
+  .controls{position:fixed;inset:0;z-index:70;pointer-events:none}
 
   #stickBase,#stickKnob{
     position:fixed;border-radius:50%;
-    pointer-events:auto;touch-action:none;user-select:none;
+    pointer-events:auto;
+    touch-action:none !important;
+    user-select:none;
+    -webkit-user-select:none;
+    -webkit-touch-callout:none;
+    -webkit-tap-highlight-color: transparent;
+    transform: translateZ(0);
   }
   #stickBase{
     width:140px;height:140px;left:22px;bottom:22px;
@@ -50,7 +63,17 @@
   #shootBtn{
     position:fixed;width:120px;height:120px;
     right:22px;bottom:28px;border-radius:50%;
-    pointer-events:auto;touch-action:none;
+    pointer-events:auto;
+    touch-action:none !important;
+    -webkit-touch-callout:none;
+    -webkit-user-select:none;
+    user-select:none;
+    -webkit-tap-highlight-color: rgba(0,0,0,0);
+    transform: translateZ(0);
+    -webkit-appearance:none;
+    appearance:none;
+    outline:none;
+
     background:radial-gradient(circle at 30% 30%,rgba(255,255,255,.35),rgba(255,0,0,.9));
     border:2px solid rgba(255,255,255,.25);
   }
@@ -61,9 +84,10 @@
     border-radius:10px;background:rgba(0,0,0,.45);pointer-events:none;
   }
 
-  @media (min-width:900px){
-    .controls{display:none;}
-  }
+  @media (pointer: fine) {
+  /* マウス主体の端末では仮想コントローラ非表示 */
+  .controls{display:none;}
+}
 </style>
 </head>
 <body>
@@ -81,11 +105,24 @@
 <div class="controls" id="controls">
   <div id="stickBase"></div>
   <div id="stickKnob"></div>
-  <div id="shootBtn"></div>
+  <button id="shootBtn" type="button" aria-label="shoot"></button>
   <div id="shootLabel">SHOT</div>
 </div>
 
 <script>
+/* =========================
+   iOS Safari (Smart Zoom) 完全抑止
+========================= */
+['gesturestart','gesturechange','gestureend','dblclick'].forEach(t=>{
+  document.addEventListener(t, e=>e.preventDefault(), {passive:false});
+});
+// shootBtn上のタッチはズーム等を確実に抑止
+['touchstart','touchmove','touchend'].forEach(t=>{
+  document.addEventListener(t, e=>{
+    if(e.target && e.target.id==='shootBtn') e.preventDefault();
+  }, {passive:false});
+});
+
 /* =========================
    基本設定
 ========================= */
@@ -97,7 +134,7 @@ resizeCanvas();
 
 function calcU(){ if (innerWidth>=1200) return 7; if (innerWidth>=800) return 6; return 4; }
 let U = calcU();
-let isMobile = innerWidth < 800;
+let isMobile = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0);
 
 function getCols(){ return 11; }
 function getRows(){ return 5; }
@@ -135,7 +172,7 @@ function setPaused(next){
   }
 }
 function togglePause(){ setPaused(!paused); }
-pauseBtn.addEventListener("click", togglePause);
+pauseBtn.addEventListener("click", (e)=>{ e.preventDefault(); togglePause(); }, {passive:false});
 
 /* =========================
    スプライト
@@ -533,7 +570,7 @@ function render(){
 }
 
 /* =========================
-   PC入力（Aで発射のみ／Space無効）
+   PC入力（A発射のみ / Space無効）
 ========================= */
 addEventListener("keydown",(e)=>{
   if(e.key==="p"||e.key==="P"||e.key==="Escape"){ togglePause(); return; }
@@ -543,7 +580,7 @@ addEventListener("keydown",(e)=>{
   if(e.code==="ArrowLeft") holdL=true;
   if(e.code==="ArrowRight") holdR=true;
 
-  if(e.code==="KeyA") shoot(); // ★ Aのみ発射
+  if(e.code==="KeyA") shoot();
 });
 addEventListener("keyup",(e)=>{
   if(paused) return;
@@ -553,14 +590,15 @@ addEventListener("keyup",(e)=>{
 });
 
 /* =========================
-   モバイル：アナログスティック＋SHOT
+   モバイル：アナログスティック＋SHOT（iOS26安定：touch専用）
 ========================= */
 const controls=document.getElementById("controls");
 const stickBase=document.getElementById("stickBase");
 const stickKnob=document.getElementById("stickKnob");
 const shootBtn=document.getElementById("shootBtn");
 
-let stick={active:false,pid:null,baseCx:0,baseCy:0,radius:52,dx:0};
+let stick={baseCx:0,baseCy:0,radius:52,dx:0};
+let stickTouchActive=false;
 
 function setKnobPos(x,y){
   const w=stickKnob.offsetWidth||74, h=stickKnob.offsetHeight||74;
@@ -571,7 +609,6 @@ function updateStickGeometry(){
   const r=stickBase.getBoundingClientRect();
   stick.baseCx=r.left+r.width/2;
   stick.baseCy=r.top+r.height/2;
-  setKnobPos(stick.baseCx,stick.baseCy);
 }
 function applyStick(){
   const dead=0.18;
@@ -580,34 +617,56 @@ function applyStick(){
   else{ holdR=true; holdL=false; }
 }
 function stickReset(){
-  stick.active=false; stick.pid=null; stick.dx=0;
+  stickTouchActive=false; stick.dx=0;
   holdL=false; holdR=false;
-  try{ updateStickGeometry(); }catch(e){}
+  updateStickGeometry();
+  setKnobPos(stick.baseCx, stick.baseCy);
 }
 
-function stickDown(e){
-  if(!isMobile||paused||over) return;
-  if(stick.active) return;
-  stick.active=true; stick.pid=e.pointerId;
-  stickKnob.setPointerCapture(e.pointerId);
-  updateStickGeometry();
-  stickMove(e); e.preventDefault();
-}
-function stickMove(e){
-  if(!isMobile||paused||!stick.active||e.pointerId!==stick.pid) return;
-  const vx=e.clientX-stick.baseCx, vy=e.clientY-stick.baseCy;
-  const len=Math.hypot(vx,vy), max=stick.radius;
-  const nx=len?vx/len:0, ny=len?vy/len:0;
-  const cl=Math.min(len,max);
-  setKnobPos(stick.baseCx+nx*cl, stick.baseCy+ny*cl);
-  stick.dx=clamp(vx/max,-1,1);
+function stickMoveTouch(t){
+  const vx = t.clientX - stick.baseCx;
+  const len = Math.abs(vx);
+  const max = stick.radius;
+  const cl = Math.min(len, max);
+  const dx = vx < 0 ? -cl : cl;
+
+  setKnobPos(stick.baseCx + dx, stick.baseCy);
+
+  stick.dx = clamp(vx / max, -1, 1);
   applyStick();
 }
-function stickUp(e){
-  if(!isMobile||e.pointerId!==stick.pid) return;
-  stickReset(); e.preventDefault();
-}
 
+stickBase.addEventListener("touchstart",(e)=>{
+  if(!isMobile||paused||over) return;
+  stickTouchActive=true;
+  updateStickGeometry();
+  if(e.touches && e.touches[0]) stickMoveTouch(e.touches[0]);
+  e.preventDefault(); e.stopPropagation();
+},{passive:false});
+
+stickKnob.addEventListener("touchstart",(e)=>{
+  if(!isMobile||paused||over) return;
+  stickTouchActive=true;
+  updateStickGeometry();
+  if(e.touches && e.touches[0]) stickMoveTouch(e.touches[0]);
+  e.preventDefault(); e.stopPropagation();
+},{passive:false});
+
+window.addEventListener("touchmove",(e)=>{
+  if(!stickTouchActive||paused) return;
+  if(e.touches && e.touches[0]) stickMoveTouch(e.touches[0]);
+  e.preventDefault(); e.stopPropagation();
+},{passive:false});
+
+function endStickTouch(e){
+  if(!stickTouchActive) return;
+  stickReset();
+  e.preventDefault(); e.stopPropagation();
+}
+window.addEventListener("touchend", endStickTouch, {passive:false});
+window.addEventListener("touchcancel", endStickTouch, {passive:false});
+
+/* SHOT連射 */
 let shootInterval=null;
 function startShooting(){
   if(paused) return;
@@ -624,28 +683,26 @@ function stopShooting(){
   canShoot=true;
 }
 
-function shootDown(e){
+shootBtn.addEventListener("touchstart",(e)=>{
   if(!isMobile||paused) return;
-  shootBtn.setPointerCapture(e.pointerId);
-  startShooting(); e.preventDefault();
-}
-function shootUp(e){
-  if(!isMobile) return;
-  stopShooting(); e.preventDefault();
-}
+  shootBtn.blur();
+  if(document.activeElement) document.activeElement.blur();
+  startShooting();
+  e.preventDefault(); e.stopPropagation();
+},{passive:false});
 
-stickKnob.addEventListener("pointerdown",stickDown);
-window.addEventListener("pointermove",stickMove,{passive:false});
-window.addEventListener("pointerup",stickUp,{passive:false});
-window.addEventListener("pointercancel",stickUp,{passive:false});
-
-shootBtn.addEventListener("pointerdown",shootDown,{passive:false});
-shootBtn.addEventListener("pointerup",shootUp,{passive:false});
-shootBtn.addEventListener("pointercancel",shootUp,{passive:false});
+function endShootTouch(e){
+  stopShooting();
+  e.preventDefault(); e.stopPropagation();
+}
+shootBtn.addEventListener("touchend", endShootTouch, {passive:false});
+shootBtn.addEventListener("touchcancel", endShootTouch, {passive:false});
 
 function updateControlsVisibility(){
-  controls.style.display = (innerWidth<900) ? "block" : "none";
+  // 画面幅ではなく「タッチ端末かどうか」で表示を決める（iPhone横画面でも確実に出す）
+  controls.style.display = isMobile ? 'block' : 'none';
   updateStickGeometry();
+  setKnobPos(stick.baseCx, stick.baseCy);
 }
 updateControlsVisibility();
 
@@ -660,7 +717,10 @@ addEventListener("resize",()=>{
     resizeQueued=false;
     resizeCanvas();
     const oldU=U, oldIsMobile=isMobile, oldCols=cols, oldRows=rows;
-    U=calcU(); isMobile=innerWidth<800; recalcSizes();
+    U=calcU();
+    // iOS横画面でもタッチ端末ならモバイル扱い
+    isMobile = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0);
+    recalcSizes();
     const bpChanged=(oldIsMobile!==isMobile)||(oldCols!==getCols())||(oldRows!==getRows());
     resetStars(); clampPlayer(); updateControlsVisibility();
     if(bpChanged){ reset(); return; }
