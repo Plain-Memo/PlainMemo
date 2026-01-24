@@ -38,6 +38,7 @@
     z-index:40;pointer-events:none;text-align:center;white-space:pre-line;
   }
 
+  /* ===== Mobile controls ===== */
   .controls{position:fixed;inset:0;z-index:70;pointer-events:none}
 
   #stickBase,#stickKnob{
@@ -183,6 +184,8 @@
     score:0, wave:1, life:3,
 
     ready:true, clearing:false, over:false, paused:false,
+    hitStop:0,
+    _pendingGameOver:false,
     invincible:0, safeTimer:0,
 
     holdL:false, holdR:false,
@@ -195,6 +198,7 @@
 
     cols:11, rows:5,
     fx:0, fy:0, dir:1,
+    prevFx:0, prevFy:0,
     enemyInitialCount:0,
     enemyFrame:0, enemyAnimTick:0, enemyShootTick:0,
     moveAcc:0, wallPause:0,
@@ -484,6 +488,25 @@
       this.holdR = false;
     },
 
+
+    // ★体当たり演出：ヒットした瞬間に「ピタ止め」してからGAME OVERを出す
+    triggerRamming(contactFy){
+      if(this.over) return;
+      this.fy = contactFy;
+
+      // ヒット停止（ms）
+      this.hitStop = 200;
+
+      if(this._pendingGameOver) return;
+      this._pendingGameOver = true;
+
+      setTimeout(() => {
+        this.hitStop = 0;
+        this._pendingGameOver = false;
+        this.gameOver();
+      }, 200);
+    },
+
     msgBeforePause: "",
     setPaused(next){
       if(this.over) return;
@@ -545,6 +568,12 @@
     update(dt){
       if(this.paused) return;
 
+      // ★体当たりが見えるようにヒット停止
+      if(this.hitStop > 0){
+        this.hitStop -= dt;
+        return;
+      }
+
       for(const s of this.stars){
         s.y += s.s * (dt*0.06);
         if(s.y > innerHeight){
@@ -563,44 +592,55 @@
       }
       this.clampPlayer();
 
-      const { totalW, stepX } = this.formationMetrics();
+      // ★敵の高速移動すり抜け対策：移動前の位置を保存
+      this.prevFx = this.fx;
+      this.prevFy = this.fy;
+
+      const { stepX, stepY } = this.formationMetrics();
       const remaining = Math.max(1, this.countAlive());
       const initialCount = this.enemyInitialCount || remaining;
       const ratio = remaining / initialCount;
 
       // 生存している敵の左右端（列）を算出（生存クラスタで壁判定するため）
-      let minAliveC = this.cols, maxAliveC = -1;
+      let minAliveC = this.cols, maxAliveC = -1, maxAliveR = -1;
       for(let rr=0; rr<this.rows; rr++){
         for(let cc=0; cc<this.cols; cc++){
           if(this.hpGrid[rr][cc] > 0){
             if(cc < minAliveC) minAliveC = cc;
             if(cc > maxAliveC) maxAliveC = cc;
+            if(rr > maxAliveR) maxAliveR = rr;
           }
         }
       }
-      if(maxAliveC < 0){ minAliveC = 0; maxAliveC = this.cols - 1; }
+      if(maxAliveC < 0){ minAliveC = 0; maxAliveC = this.cols - 1; maxAliveR = this.rows - 1; }
 
       /* =========================================================
          ★ULTRA FAST：序盤から速く、減るほどさらに加速、最後の1体は激速
+         - moveInterval（ms）が小さいほど、ステップ回数が増えて速く見える
+         - stepMoveX も増やして「体感速度」を上げる
       ========================================================= */
-      const baseInterval = 150;
-      const minInterval  = 10;
+      const baseInterval = 150;  // 序盤から速い
+      const minInterval  = 10;   // 終盤の限界（小さいほど爆速）
 
-      const t = 1 - ratio;
-      const curve = Math.pow(t, 1.55);
+      const t = 1 - ratio;                 // 0→1（敵が減るほど大）
+      const curve = Math.pow(t, 1.55);     // 小さめで「だんだん早くなる」を強める
 
       let moveInterval = baseInterval * (1 - curve) + minInterval * curve;
 
       const waveSpeedMul = 1 / (1 + (this.wave - 1) * 0.06);
       moveInterval *= waveSpeedMul;
 
+      // 残り1体はさらに最速へ（当たりにくいレベル）
       if (remaining === 1) moveInterval = Math.min(moveInterval, 6);
+
+      // rAF/環境差で暴走しない最低ライン
       moveInterval = Math.max(6, moveInterval);
 
+      // 1ステップの横移動量を増やして、さらに当たりにくく
       const stepMoveX = 1.35*this.U*(1+(this.wave-1)*0.03);
 
-      const stepDown  = 0.60*this.U;
-      const wallPauseMs = 70;
+      const stepDown  = 1.6*this.U;
+      const wallPauseMs = 70; // 壁で止まる時間も短く
 
       if(!this.ready && !this.clearing && !this.over){
         this.moveAcc += dt;
@@ -611,7 +651,6 @@
         }
         while(this.moveAcc >= moveInterval){
           this.moveAcc -= moveInterval;
-
           const margin = 10;
           const nextFx = this.fx + this.dir * stepMoveX;
 
@@ -624,11 +663,16 @@
             const overflow = nextAliveRight - (innerWidth - margin);
             this.fx = nextFx - overflow;
             this.dir = -1;
-
-            const enemyMaxY = this.playerTopY() - 120;
-            const stepYFix = 7 * this.U;
-            const maxFy = enemyMaxY - (this.rows - 1) * stepYFix;
-            this.fy = Math.min(this.fy + stepDown, maxFy);
+            // ★体当たりOK：下降制限をなくしてどんどん降りる（ただし当たった瞬間に止める）
+            this.fy += stepDown;
+            // 自機にめり込む前に「ぴったり接触」で止めて即ゲームオーバー
+            const playerTop = this.playerTopY();
+            const lowestBottom = this.fy + maxAliveR * stepY + this.enemyH;
+            if (lowestBottom >= playerTop) {
+              this.fy = playerTop - (maxAliveR * stepY + this.enemyH);
+              this.triggerRamming(this.fy);
+              return;
+            }
 
             this.wallPause = wallPauseMs;
 
@@ -641,11 +685,16 @@
             const overflow = margin - nextAliveLeft;
             this.fx = nextFx + overflow;
             this.dir = 1;
-
-            const enemyMaxY = this.playerTopY() - 120;
-            const stepYFix = 7 * this.U;
-            const maxFy = enemyMaxY - (this.rows - 1) * stepYFix;
-            this.fy = Math.min(this.fy + stepDown, maxFy);
+            // ★体当たりOK：下降制限をなくしてどんどん降りる（ただし当たった瞬間に止める）
+            this.fy += stepDown;
+            // 自機にめり込む前に「ぴったり接触」で止めて即ゲームオーバー
+            const playerTop = this.playerTopY();
+            const lowestBottom = this.fy + maxAliveR * stepY + this.enemyH;
+            if (lowestBottom >= playerTop) {
+              this.fy = playerTop - (maxAliveR * stepY + this.enemyH);
+              this.triggerRamming(this.fy);
+              return;
+            }
 
             this.wallPause = wallPauseMs;
 
@@ -697,8 +746,68 @@
 
     detectCollisions(){
       if(this.paused) return;
+      if(this.hitStop > 0) return;
 
-      for(let i=this.bullets.length-1;i>=0;i--){
+      
+      // ★敵の体当たり（高速でも通り抜けない：スイープAABB）
+      if(!this.over && !this.ready && !this.clearing){
+        const shipX = this.px - this.shipW/2;
+        const shipY = this.playerTopY();
+        const shipW = this.shipW;
+        const shipH = this.shipH;
+
+        const { stepX, stepY } = this.formationMetrics();
+        const fx0 = (typeof this.prevFx === "number") ? this.prevFx : this.fx;
+        const fy0 = (typeof this.prevFy === "number") ? this.prevFy : this.fy;
+
+        // 生存している最下段（めり込みゼロ補正用）
+        let maxAliveR = -1;
+        for(let rr=0; rr<this.rows; rr++){
+          for(let cc=0; cc<this.cols; cc++){
+            if(this.hpGrid[rr][cc] > 0) maxAliveR = Math.max(maxAliveR, rr);
+          }
+        }
+
+        for(let r=0; r<this.rows; r++){
+          for(let c=0; c<this.cols; c++){
+            if(this.hpGrid[r][c] <= 0) continue;
+
+            const exA = fx0 + c*stepX;
+            const eyA = fy0 + r*stepY;
+            const exB = this.fx + c*stepX;
+            const eyB = this.fy + r*stepY;
+
+            const sx = Math.min(exA, exB);
+            const sy = Math.min(eyA, eyB);
+            const sw = Math.max(exA + this.enemyW, exB + this.enemyW) - sx;
+            const sh = Math.max(eyA + this.enemyH, eyB + this.enemyH) - sy;
+
+            if(aabb(sx, sy, sw, sh, shipX, shipY, shipW, shipH)){
+              // 潜り込みを見せない：最下段の底を自機の上端にピタ合わせ
+              if(maxAliveR >= 0){
+                const enemyBottom = this.fy + maxAliveR*stepY + this.enemyH;
+                const over = enemyBottom - shipY;
+                if(over > 0) this.fy -= over;
+              }
+
+              const HIT_MS = 260; // 体当たりが見えるおすすめ値（0.26秒）
+              this.hitStop = Math.max(this.hitStop, HIT_MS);
+
+              if(!this._pendingGameOver){
+                this._pendingGameOver = true;
+                setTimeout(() => {
+                  this.hitStop = 0;
+                  this._pendingGameOver = false;
+                  this.gameOver();
+                }, HIT_MS);
+              }
+              return;
+            }
+          }
+        }
+      }
+
+for(let i=this.bullets.length-1;i>=0;i--){
         const b=this.bullets[i];
         if(this.shieldHitAndDamage(b.x,b.y,this.BW,this.BH)) this.bullets.splice(i,1);
       }
@@ -706,6 +815,28 @@
         const b=this.ebullets[i];
         if(this.shieldHitAndDamage(b.x,b.y,this.BW,this.BH)) this.ebullets.splice(i,1);
       }
+      // ★敵が自機に体当たりしたら即ゲームオーバー
+      if(!this.over){
+        const pl = this.px - this.shipW/2;
+        const pt = this.playerTopY();
+        const pw = this.shipW;
+        const ph = this.shipH;
+        const {stepX, stepY} = this.formationMetrics();
+        for(let r=0;r<this.rows;r++){
+          for(let c=0;c<this.cols;c++){
+            if(this.hpGrid[r][c] <= 0) continue;
+            const ex = this.fx + c*stepX;
+            const ey = this.fy + r*stepY;
+            if(aabb(ex,ey,this.enemyW,this.enemyH, pl,pt,pw,ph)){
+              // 見た目：めり込ませず「ぴったり接触」で止める
+              this.fy = pt - (r * stepY + this.enemyH);
+              this.triggerRamming(this.fy);
+              return;
+            }
+          }
+        }
+      }
+
 
       const {stepX,stepY} = this.formationMetrics();
       for(let i=this.bullets.length-1;i>=0;i--){
