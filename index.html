@@ -1487,9 +1487,11 @@ resetStars(){
       this.stick.dx = 0;
       state.holdL = false;
       state.holdR = false;
-      this.applyMobileControlSizes();
-      this.stickGeomDirty = true;
-      this.updateStickGeometry();
+
+      // NOTE: Do not resize mobile controls here.
+      // Resizing is handled only on viewport changes (resize / breakpoint change),
+      // so the joystick + shot button don't "snap" size after first interaction.
+      this.updateStickGeometry(); // reads rect only when dirty
       this.setKnobPos(this.stick.baseCx, this.stick.baseCy);
     },
 
