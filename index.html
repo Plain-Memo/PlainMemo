@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport"
   content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-<title>Invader Stable v8.4 (Input & Mobile & Perf)</title>
+<title>Invader Stable v8.4.1 (stabilized).1 (Stabilized)</title>
 <style>
   html,body{
     margin:0;padding:0;background:#000;overflow:hidden;
@@ -524,7 +524,7 @@ resetStars(){
       const stepX = this.enemyW + minGapX;
       const stepY = this.enemyH + minGapY;
       const totalW = this.cols*this.enemyW + (this.cols-1)*minGapX;
-      const baseY = Math.max(90, this.h*0.22);
+      const baseY = this.isMobile ? Math.max(52, this.h*0.14) : Math.max(90, this.h*0.22);
       this.fm = { stepX, stepY, totalW, baseY, minGapX, minGapY };
       this.fmDirty = false;
     }
@@ -928,8 +928,7 @@ resetStars(){
       pauseBtn.textContent = "PAUSE";
       pauseBtn.setAttribute("aria-pressed", "false");
       msgEl.innerHTML = 'GAME OVER<br><span id="restartHint">TAP / CLICK / ENTER</span>';
-      msgEl.style.pointerEvents = "auto";
-      bindRestartHint();
+      msgEl.style.pointerEvents = "none";
       s.holdL = false;
       s.holdR = false;
     }
@@ -1180,8 +1179,7 @@ resetStars(){
         if(this._msgBeforePause && this._msgBeforePause !== "PAUSED") msgEl.innerHTML = this._msgBeforePause;
         else msgEl.textContent = "";
         // Re-enable hint tapping only if we restored GAME OVER message
-        if(state.over){ msgEl.style.pointerEvents = "auto"; bindRestartHint(); }
-        else { msgEl.style.pointerEvents = "none"; }
+        msgEl.style.pointerEvents = "none";
         this._msgBeforePause = "";
       }
     }
