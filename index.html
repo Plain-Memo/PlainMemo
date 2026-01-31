@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport"
   content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-<title>Invader Stable v8.4.3 (Stabilized - Guarded)</title>
+<title>Invader Stable v8.5.5 (Row Scores Tuned)</title>
 <style>
   html,body{
     margin:0;padding:0;background:#000;overflow:hidden;
@@ -381,22 +381,98 @@
     return (window.matchMedia && window.matchMedia("(pointer: coarse)").matches)
       || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0);
   }
-
   const SHIP = [
-    "000010000","000111000","000111000",
-    "011111110","111111111","111111111","111111111"
+    "000010000",
+    "000111000",
+    "001111100",
+    "011111110",
+    "111111111"
   ];
 
   const ENEMY_TYPES = [
-    { a:["0100010","1111111","1011101","0100010"], b:["0100010","1111111","0101010","1010101"] },
-    { a:["0011100","0111110","1101011","0111110"], b:["0011100","1111111","0101010","1010101"] },
-    { a:["0110110","1111111","0101010","1010101"], b:["0011100","0111110","1101011","0111110"] },
-    { a:["0011100","1111111","1010101","0100010"], b:["0011100","0111110","0101010","1010101"] }
+    // Type 0: SQUID (top)
+    { a:[
+        "00100100100",
+        "00011111000",
+        "00111111100",
+        "01101110110",
+        "11111111111",
+        "10111111101",
+        "00100100100",
+        "01000000010",
+      ],
+      b:[
+        "00100100100",
+        "00011111000",
+        "00111111100",
+        "01101110110",
+        "11111111111",
+        "10111111101",
+        "01001001000",
+        "00010010010",
+      ]
+    },
+
+    // Type 1: CRAB (middle)
+    { a:[
+        "01100000110",
+        "00111111100",
+        "01111111110",
+        "11101110111",
+        "11111111111",
+        "00110001100",
+        "01100000110",
+        "11000000011",
+      ],
+      b:[
+        "01100000110",
+        "00111111100",
+        "01111111110",
+        "11101110111",
+        "11111111111",
+        "00110001100",
+        "11000000011",
+        "01100000110",
+      ]
+    },
+
+    // Type 2: OCTOPUS (bottom)
+    { a:[
+        "00011111000",
+        "00111111100",
+        "01111111110",
+        "11010101011",
+        "11111111111",
+        "00111111100",
+        "01011011010",
+        "10100000101",
+      ],
+      b:[
+        "00011111000",
+        "00111111100",
+        "01111111110",
+        "11010101011",
+        "11111111111",
+        "00111111100",
+        "10101110101",
+        "01000000010",
+      ]
+    },
   ];
 
+  const ENEMY_SPR_W = ENEMY_TYPES[0].a[0].length; // 11
+  const ENEMY_SPR_H = ENEMY_TYPES[0].a.length;    // 8
   const SHIELD = [
-    "00111100","01111110","11111111","11111111","11111111","11000011"
+    "001111111100",
+    "011111111110",
+    "111111111111",
+    "111111111111",
+    "111110011111",
+    "111100001111",
+    "111000000111",
+    "110000000011"
   ];
+
 
   function drawBitmap(lines, x, y, scale, color){
       ctx.fillStyle = color;
@@ -509,10 +585,18 @@
       this.BH = CONFIG.player.bulletH;
 
       this.colors = {
-        shield: () => "#ff3333",
-        player: () => "#44ff88",
-        row: ["#ff4d4d","#ffb84d","#ffff4d","#4dff4d","#4dd2ff"]
+        shield: () => "#ff0000",
+        player: () => "#44d9ff",
+        row: ["#39ff14","#39ff14","#44d9ff","#44d9ff","#ff3cff"]
       };
+
+      // Row -> enemy type mapping (Space Invaders style):
+      // rows: [SQUID, CRAB, CRAB, OCTOPUS, OCTOPUS]
+      this.rowTypeMap = [0,1,1,2,2];
+
+      // Row -> score mapping (top -> bottom):
+      // Edit this single line to change enemy points per row.
+      this.rowScoreMap = [30,20,20,10,10];
 
       this.fm = { stepX:0, stepY:0, totalW:0, baseY:0, minGapX:0, minGapY:0 };
       this.fmDirty = true;
@@ -577,10 +661,11 @@
 
       const maxMul = this.isMobile ? 5.8 : 8.5;
       this.enemyW = clamp(targetW, 2.6*this.U, maxMul*this.U);
-      this.enemyH = this.enemyW * (4/7);
+      this.enemyH = this.enemyW * (ENEMY_SPR_H/ENEMY_SPR_W);
 
-      this.shieldW = 8*this.U;
-      this.shieldH = 6*this.U;
+      // Shield size follows SHIELD bitmap dimensions
+      this.shieldW = SHIELD[0].length * this.U;
+      this.shieldH = SHIELD.length * this.U;
 
       this.fmDirty = true;
     }
@@ -617,6 +702,11 @@ resetStars(){
     }
 
     rowKillScore(r){
+      // Use rowScoreMap when available (top -> bottom)
+      if(Array.isArray(this.rowScoreMap) && this.rowScoreMap.length){
+        return this.rowScoreMap[r] ?? this.rowScoreMap[this.rowScoreMap.length-1] ?? 10;
+      }
+      // Fallback
       return (this.rows - r) * 10;
     }
 
@@ -675,7 +765,7 @@ resetStars(){
       s.aliveIndex = new Int16Array(total);
       s.aliveIndex.fill(-1);
 
-      const enemyScale = Math.max(1, Math.round(s.enemyW/7));
+      const enemyScale = Math.max(1, Math.round(s.enemyW/ENEMY_SPR_W));
       for(let r=0;r<s.rows;r++){
         for(let c=0;c<s.cols;c++){
           if(s.hpGrid[r][c] > 0){
@@ -1464,11 +1554,12 @@ resetStars(){
         }
       }
 
-      const enemyScale = Math.max(1, Math.round(s.enemyW/7));
+      const enemyScale = Math.max(1, Math.round(s.enemyW/ENEMY_SPR_W));
       for(let r=0;r<s.rows;r++){
         for(let c=0;c<s.cols;c++){
           if(s.hpGrid[r][c] <= 0) continue;
-          const type = ENEMY_TYPES[r % ENEMY_TYPES.length];
+          const typeIndex = (s.rowTypeMap && s.rowTypeMap[r] != null) ? s.rowTypeMap[r] : (r % ENEMY_TYPES.length);
+          const type = ENEMY_TYPES[typeIndex % ENEMY_TYPES.length];
           const bmp = s.enemyFrame ? type.b : type.a;
           const color = s.colors.row[r % s.colors.row.length];
           const x = s.fx + c*fm.stepX;
