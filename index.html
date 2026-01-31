@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport"
   content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-<title>Invader Stable v8.4.2ab (Stabilized - Clean)</title>
+<title>Invader Stable v8.4.3 (Stabilized - Guarded)</title>
 <style>
   html,body{
     margin:0;padding:0;background:#000;overflow:hidden;
@@ -162,6 +162,50 @@
   };
 
 
+  // ===== GLOBAL ERROR GUARD (stabilization) =====
+  // Prevent "black screen" by surfacing errors and allowing recovery.
+  let _recovering = false;
+  const showFatal = (label, err) => {
+    console.error(label, err);
+    try{
+      msgEl.innerHTML = `${label}<br><span id="restartHint">TAP / CLICK / ENTER</span>`;
+      msgEl.style.pointerEvents = "none";
+    }catch(_){}
+    try{
+      state.over = true;
+      state.paused = false;
+      pauseBtn.textContent = "PAUSE";
+      pauseBtn.setAttribute("aria-pressed","false");
+    }catch(_){}
+  };
+
+  const requestRecover = (reason) => {
+    if(_recovering) return;
+    _recovering = true;
+    setTimeout(() => {
+      try{
+        if(typeof logic !== "undefined" && logic && typeof logic.reset === "function"){
+          logic.reset();
+        }
+      }catch(err){
+        showFatal("ERROR", err);
+      }finally{
+        _recovering = false;
+      }
+    }, 0);
+  };
+
+  window.addEventListener("error", (e) => {
+    showFatal("ERROR", e.error || e.message || e);
+    requestRecover("window.error");
+  });
+
+  window.addEventListener("unhandledrejection", (e) => {
+    showFatal("ERROR", e.reason || e);
+    requestRecover("unhandledrejection");
+  });
+
+
   /* =========================================================
      v8.4
      - ③入力処理整理：playerCanShoot廃止（クールダウン一本化）
@@ -292,6 +336,26 @@
 
   const isFiniteNum = (v) => Number.isFinite(v);
   const safeNum = (v, fallback=0) => (Number.isFinite(v) ? v : fallback);
+
+  const sanitizeState = (fm) => {
+    // Ensure critical numeric fields remain finite
+    state.px = safeNum(state.px, state.w/2);
+    state.fx = safeNum(state.fx, (state.w - fm.totalW)/2);
+    state.fy = safeNum(state.fy, fm.baseY);
+
+    // Clamp player and formation to sensible ranges
+    state.clampPlayer();
+
+    const formationH = (state.rows-1) * fm.stepY + state.enemyH;
+    const maxFy = Math.max(0, state.playerTopY() - formationH - 6);
+    state.fy = clamp(state.fy, 0, maxFy);
+
+    // If core arrays are missing/corrupt, rebuild the wave safely
+    if(!Array.isArray(state.hpGrid) || state.hpGrid.length !== state.rows){
+      enemies.spawnEnemies();
+      shields.spawnShields();
+    }
+  };
 
 
   function resizeCanvas(){
@@ -1726,6 +1790,7 @@ resetStars(){
       shields.relayoutShields();
 
       const fm = state.getFM();
+      sanitizeState(fm);
       // Keep formation on-screen after resize (avoid NaN / too-low spawn)
       state.fx = safeNum((state.w - fm.totalW)/2, 0);
 
@@ -1759,6 +1824,7 @@ resetStars(){
       state.paused = false;
       msgEl.innerHTML = 'ERROR<br><span id="restartHint">TAP / CLICK / ENTER</span>';
       msgEl.style.pointerEvents = "none";
+      requestRecover("loop.catch");
     }
 
     requestAnimationFrame(loop);
