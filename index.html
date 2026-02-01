@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport"
   content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-<title>Invader Stable v8.5.5 (Row Scores Tuned)</title>
+<title>Invader Stable v8.5.6 (Stabilized)</title>
 <style>
   html,body{
     margin:0;padding:0;background:#000;overflow:hidden;
@@ -162,6 +162,10 @@
   };
 
 
+// DOM refs (defined early to avoid TDZ issues in error handlers)
+let scoreEl, waveEl, lifeEl, msgEl, pauseBtn;
+
+
   // ===== GLOBAL ERROR GUARD (stabilization) =====
   // Prevent "black screen" by surfacing errors and allowing recovery.
   let _recovering = false;
@@ -276,6 +280,7 @@
   const ctx = cv.getContext("2d", { alpha:false, desynchronized:true })
            || cv.getContext("2d", { alpha:false })
            || cv.getContext("2d");
+  if(!ctx) failHard("Canvas 2D context not available");
 
   let DPR = 1;
 
@@ -290,11 +295,12 @@
     });
   }
 
-  const scoreEl = document.getElementById("score");
-  const waveEl  = document.getElementById("wave");
-  const lifeEl  = document.getElementById("life");
-  const msgEl   = document.getElementById("msg");
-  const pauseBtn = document.getElementById("pauseBtn");
+  scoreEl = document.getElementById("score");
+  waveEl  = document.getElementById("wave");
+  lifeEl  = document.getElementById("life");
+  msgEl   = document.getElementById("msg");
+  pauseBtn = document.getElementById("pauseBtn");
+  if(!scoreEl || !waveEl || !lifeEl || !msgEl || !pauseBtn) failHard("DOM init failed");
 
   // --- Restart by tapping only the "Tap or Enter" hint (GAME OVER) ---
   function bindRestartHint(){
@@ -1709,6 +1715,28 @@ resetStars(){
     renderer    = new Renderer(state, projectiles);
   }
 
+
+// ===== Visibility / focus stabilization =====
+// Prevent stuck inputs when tab loses focus, and auto-pause when hidden.
+const clearInputs = () => {
+  if(!state) return;
+  state.holdL = false; state.holdR = false;
+  try{ Input && Input.stickReset && Input.stickReset(); }catch(_){}
+};
+
+const autoPauseIfNeeded = () => {
+  try{
+    if(!state || !logic) return;
+    if(state.over) return;
+    if(!state.paused) logic.setPaused(true);
+  }catch(_){}
+};
+
+window.addEventListener("blur", () => { clearInputs(); autoPauseIfNeeded(); }, {passive:true});
+document.addEventListener("visibilitychange", () => {
+  if(document.hidden){ clearInputs(); autoPauseIfNeeded(); }
+}, {passive:true});
+
   pauseBtn.addEventListener("click", (e)=>{
     e.preventDefault();
     logic.togglePause();
@@ -1730,7 +1758,9 @@ resetStars(){
     if(e.code==="ArrowRight") state.holdR=true;
 
     // キーボード側もクールダウンで制限されます（shootPlayerOnce 内）
-    if(e.code==="KeyA"){
+    if(e.code==="Space" && !e.repeat){
+      // Space can scroll the page in some browsers; prevent that.
+      e.preventDefault();
       projectiles.shootPlayerOnce();
     }
   });
@@ -1802,6 +1832,8 @@ resetStars(){
     const endStickPointer = (e) => {
       if(!Input.stickTouchActive) return;
       if(Input.stickPointerId != null && e.pointerId !== Input.stickPointerId) return;
+      try{ stickBase.releasePointerCapture && stickBase.releasePointerCapture(e.pointerId); }catch(_){ }
+      try{ stickKnob.releasePointerCapture && stickKnob.releasePointerCapture(e.pointerId); }catch(_){ }
       Input.stickReset();
       e.preventDefault();
       e.stopPropagation();
@@ -1890,7 +1922,8 @@ resetStars(){
       const baseFy = safeNum(fm.baseY, 0);
       state.fy = clamp(baseFy, 0, maxFy);
 
-      if(state.paused) Input.stickReset();
+      // Always clear held inputs after resize/orientation change
+      Input.stickReset();
     });
   });
 
