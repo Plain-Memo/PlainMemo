@@ -2,25 +2,26 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
 <title>ローマ字タイピング（5分）</title>
 <style>
   :root{
-    --bg:#f7f7f7;
-    --bar:#6f8fb2;
-    --accent:#0aa0d7;
-    --accent2:#ff8a00;
-    --text:#2b2b2b;
-    --muted:#777;
-    --key:#ffffff;
-    --keyBorder:#d9d9d9;
-    --keyShadow:0 1px 0 rgba(0,0,0,.05);
-    --hl:#00a3ff;
-    --hl2:#ffb703;
-    --good:#0a84ff;
-    --bad:#ff3b30;
+    --bg:#e5e7eb;
+    --bar:#4b5563;
+    --accent:#6b7280;
+    --accent2:#f59e0b;
+    --text:#111827;
+    --muted:#6b7280;
+    --key:#f9fafb;
+    --keyBorder:#d1d5db;
+    --keyShadow:0 1px 0 rgba(0,0,0,.06);
+    --hl:#2563eb;
+    --hl2:#f59e0b;
+    --good:#2563eb;
+    --bad:#dc2626;
+    --kbScale:1;
   }
-  *{box-sizing:border-box}
+*{box-sizing:border-box}
   body{
     margin:0;
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", sans-serif;
@@ -34,16 +35,19 @@
     display:flex;
     align-items:center;
     justify-content:space-between;
-    padding:0 16px;
+    padding:0 calc(16px + env(safe-area-inset-right)) 0 calc(16px + env(safe-area-inset-left));
   }
   .topbar .title{
     font-weight:700;
     letter-spacing:.02em;
+    white-space:nowrap;
+    font-size:16px;
   }
   .topbar .right{
     display:flex;
     align-items:center;
     gap:14px;
+    white-space:nowrap;
     white-space:nowrap;
   }
   .timerWrap{
@@ -94,7 +98,7 @@
   .wrap{
     max-width:1100px;
     margin:0 auto;
-    padding:32px 16px 40px;
+    padding:clamp(14px, 3.2vw, 32px) clamp(12px, 2.8vw, 16px) clamp(20px, 4vw, 40px);
   }
 
   .countBadge{
@@ -124,10 +128,11 @@
     margin-top:8px;
   }
   .jp{
-    font-size:44px;
+    font-size:clamp(28px, 4.5vw, 44px);
     font-weight:800;
     color:#0a84ff;
     line-height:1.25;
+    word-break:keep-all;
   }
   .divider{
     height:2px;
@@ -136,17 +141,18 @@
     margin:10px auto 10px;
   }
   .kana{
-    font-size:20px;
+    font-size:clamp(14px, 2.6vw, 20px);
     color:#333;
     margin:0 0 6px;
   }
   .romaji{
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-    font-size:22px;
+    font-size:clamp(16px, 2.8vw, 22px);
     font-weight:800;
     letter-spacing:.08em;
     color:#111;
     margin:0 0 10px;
+    overflow-wrap:anywhere;
   }
   .romaji .good{color:#111}
   .romaji .typedGood{color:#111}
@@ -154,8 +160,8 @@
   .romaji .rest{color:#b7b7b7}
 
   .hint{
-    margin-top:18px;
-    font-size:36px;
+    margin-top:clamp(10px, 2.6vw, 18px);
+    font-size:clamp(22px, 5vw, 36px);
     font-weight:900;
     color:var(--accent2);
   }
@@ -166,12 +172,37 @@
   }
 
   /* Keyboard */
+
+  .kbControls{
+    display:none;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+    margin:10px auto 0;
+    color:#555;
+    font-weight:800;
+    user-select:none;
+  }
+  .kbControls input[type="range"]{ width:160px; }
+  .kbControls #kbScaleVal{ min-width:52px; text-align:right; }
+
+  /* Keyboard viewport + scalable inner */
+  .kbStage{width:100%; display:flex; justify-content:center; align-items:flex-start; text-align:center;}
+  .kbInner{
+    display:block;
+    margin:0 auto;
+    width:auto;
+    transform: scale(var(--kbZoom, 1));
+    transform-origin: top center;
+    will-change: transform;
+  }
   .kbWrap{
-    margin:28px auto 0;
+    overflow:hidden;
+    margin:clamp(14px, 3vw, 28px) auto 0;
     width:min(980px, 100%);
     background:#f0f0f0;
     border-radius:14px;
-    padding:16px 14px;
+    padding:clamp(10px, 2.2vw, 16px) clamp(10px, 2vw, 14px);
     box-shadow: 0 2px 10px rgba(0,0,0,.06);
   }
   .row{display:flex; gap:6px; justify-content:center; margin:6px 0;}
@@ -218,14 +249,17 @@
 
   /* Footer stats (small) */
   .stats{
-    display:flex;
-    gap:16px;
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));
+    gap:12px;
     justify-content:center;
-    margin-top:24px;
-    flex-wrap:wrap;
+    margin:24px auto 0;
+    max-width:900px;
+    padding:0 12px;
   }
   .stat{
-    width:170px;
+    width:auto;
+    min-width:0;
     background:#fff;
     border:1px solid #e6e6e6;
     border-radius:12px;
@@ -240,6 +274,76 @@
     top:-9999px;
     opacity:0;
     width:1px;height:1px;
+  }
+
+  .kbWrap, .key{ touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+  .key{ user-select:none; }
+  .key.shift.shiftOn{
+    background:rgba(245, 158, 11, .22);
+    border-color:rgba(245, 158, 11, .8);
+    box-shadow:0 0 0 3px rgba(245, 158, 11, .12);
+  }
+
+  /* Mobile layout */
+  
+  /* Device-friendly tweaks (Nest Hub / Duo / tablets) */
+  @media (max-height: 720px){
+    .topbar{height:48px;}
+    .progress{width:140px;height:10px;}
+    .wrap{padding-top:14px; padding-bottom:20px;}
+    .divider{margin:8px auto;}
+    .kbWrap{margin-top:12px;}
+    .stats{margin-top:14px; gap:10px;}
+    .stat{padding:12px 10px;}
+  }
+  @media (max-width: 600px){
+    .progress{width:120px;}
+    .topbar .title{font-size:14px; max-width:42vw; overflow:hidden; text-overflow:ellipsis;}
+    .topbar .right{gap:10px;}
+    .countBadge{margin-bottom:16px;}
+    .kbControls{gap:8px;}
+  }
+  /* Surface Duo portrait-ish: tighten blocks */
+  @media (max-width: 560px) and (min-height: 650px){
+    .jp{line-height:1.18;}
+    .kana{margin-bottom:4px;}
+    .romaji{letter-spacing:.06em;}
+    .stats{grid-template-columns:repeat(auto-fit, minmax(150px, 1fr));}
+  }
+  /* 1024px wide dashboards (Nest Hub / iPad landscape): keep comfortable margins */
+  @media (min-width: 980px) and (max-height: 820px){
+    .wrap{max-width:1000px;}
+    .kbWrap{width:min(920px, 100%);}
+  }
+
+@media (max-width: 820px){
+    .topbar{height:48px;padding:0 10px;}
+    .topbar .title{font-size:14px}
+    .timeText{font-size:22px}
+    .progress{width:120px;height:10px}
+    .endBtn{padding:8px 12px;font-size:14px}
+    .wrap{padding:18px 12px 10px}
+    .kbControls{display:flex}
+    .kbControls input[type="range"]{width:180px}
+    .chip{transform:scale(.95); transform-origin:left top;}
+    .jp{font-size:28px}
+    .kana{font-size:14px}
+    .romaji{font-size:15px}
+    .kbWrap{width:100%; padding:10px; border-radius:14px}
+    .row{gap:6px}
+    .key{height:40px; font-size:14px; padding:6px 8px}
+    .key.wide{min-width:64px}
+    .key.enter{min-width:64px}
+    .key.space{height:46px}
+    .stats{grid-template-columns:repeat(2,1fr); gap:10px}
+    .stat .v{font-size:22px}
+  }
+
+
+  @media (max-width:380px){
+    .stats{grid-template-columns:repeat(auto-fit, minmax(120px, 1fr));}
+    .topbar{padding:0 10px;}
+    .topbar .title{font-size:14px;}
   }
 </style>
 </head>
@@ -276,7 +380,12 @@
       </div>
 
       <input class="hiddenInput" id="hiddenInput" autocomplete="off" autocapitalize="off" spellcheck="false" />
-      <div class="kbWrap" id="kb"></div>
+      <div class="kbControls" id="kbControls" aria-label="キーボード幅調整">
+        <span>キーボード幅</span>
+        <input type="range" id="kbScale" min="80" max="140" value="100" step="5"/>
+        <span id="kbScaleVal">100%</span>
+      </div>
+      <div class="kbWrap" id="kbWrap"><div class="kbStage" id="kbStage"><div class="kbInner" id="kb"></div></div></div>
 
       <div class="stats">
         <div class="stat"><div class="k">正解</div><div class="v" id="statOk">0</div></div>
@@ -313,6 +422,161 @@
     order: [],
     orderIdx: 0,
   };
+
+  // ===== Keyboard width scale (mobile) =====
+
+  const KB_ROWS = [
+    // row1
+    [
+      {code:"Digit1", label:"1"}, {code:"Digit2", label:"2"}, {code:"Digit3", label:"3"}, {code:"Digit4", label:"4"},
+      {code:"Digit5", label:"5"}, {code:"Digit6", label:"6"}, {code:"Digit7", label:"7"}, {code:"Digit8", label:"8"},
+      {code:"Digit9", label:"9"}, {code:"Digit0", label:"0"},
+      {code:"Minus", label:"-"},
+      {code:"Equal", label:"^"},
+      {code:"IntlYen", label:"¥"},
+      {code:"Backspace", label:"Back", cls:"backspace wide"}
+    ],
+    // row2
+    [
+      {code:"KeyQ", label:"Q"}, {code:"KeyW", label:"W"}, {code:"KeyE", label:"E"}, {code:"KeyR", label:"R"},
+      {code:"KeyT", label:"T"}, {code:"KeyY", label:"Y"}, {code:"KeyU", label:"U"}, {code:"KeyI", label:"I"},
+      {code:"KeyO", label:"O"}, {code:"KeyP", label:"P"},
+      {code:"BracketLeft", label:"@"},
+      {code:"BracketRight", label:"["},
+      {code:"Enter", label:"Enter", cls:"enter"}
+    ],
+    // row3
+    [
+      {code:"KeyA", label:"A"}, {code:"KeyS", label:"S"}, {code:"KeyD", label:"D"}, {code:"KeyF", label:"F"},
+      {code:"KeyG", label:"G"}, {code:"KeyH", label:"H"}, {code:"KeyJ", label:"J"}, {code:"KeyK", label:"K"},
+      {code:"KeyL", label:"L"},
+      {code:"Semicolon", label:";"},
+      {code:"Quote", label:":"}, // JISでは : がこのへん。簡略表示
+      {code:"Backslash", label:"]"} // 簡略（この記号はほぼ出ないので保険）
+    ],
+    // row4
+    [
+      {code:"ShiftLeft", label:"Shift", cls:"shift"},
+      {code:"KeyZ", label:"Z"}, {code:"KeyX", label:"X"}, {code:"KeyC", label:"C"}, {code:"KeyV", label:"V"},
+      {code:"KeyB", label:"B"}, {code:"KeyN", label:"N"}, {code:"KeyM", label:"M"},
+      {code:"Comma", label:","}, {code:"Period", label:"."}, {code:"Slash", label:"/"},
+      {code:"IntlRo", label:"\\"},
+      {code:"ShiftRight", label:"Shift", cls:"shift"}
+    ],
+    // row5
+    [
+      {code:"Space", label:"", cls:"space"}
+    ]
+  ];
+  const ROOT = document.documentElement;
+  const kbScaleEl = $("kbScale");
+  const kbScaleValEl = $("kbScaleVal");
+  let KB_DESIRED_SCALE = 1;
+  function estimateKeyboardBaseWidth(){
+    // Compute intrinsic keyboard width from the row definition (robust across devices)
+    const W = {
+      small:40, key:44, wide:88, wider:110, space:340, enter:96, shift:120, backspace:92
+    };
+    const GAP = 6; // must match CSS `.row{ gap:6px }`
+    let maxW = 0;
+    for(const row of KB_ROWS){
+      let w = 0;
+      for(const k of row){
+        const cls = (k.cls || "").split(/\s+/).filter(Boolean);
+        // width class priority
+        if(cls.includes("small")) w += W.small;
+        else if(cls.includes("wider")) w += W.wider;
+        else if(cls.includes("wide")) w += W.wide;
+        else if(cls.includes("space")) w += W.space;
+        else if(cls.includes("enter")) w += W.enter;
+        else if(cls.includes("shift")) w += W.shift;
+        else if(cls.includes("backspace")) w += W.backspace;
+        else w += W.key;
+      }
+      if(row.length > 1) w += GAP * (row.length - 1);
+      if(w > maxW) maxW = w;
+    }
+    return maxW || 1;
+  }
+
+  function getAvailableStageWidth(stage){
+    // Prefer VisualViewport (iOS address bar / zoom can make layout measurements stale)
+    const vv = window.visualViewport;
+    if(vv){
+      // Convert visualViewport width into layout px relative to the stage
+      // Use stage's bounding rect for reliable "available" width
+      const rect = stage.getBoundingClientRect();
+      // Clamp to rect width because stage is already constrained by layout
+      return Math.max(1, Math.min(rect.width, vv.width));
+    }
+    return Math.max(1, stage.getBoundingClientRect().width || stage.clientWidth || 1);
+  }
+
+  function updateKbFit(){
+    const stage = $("kbStage") || $("kbWrap");
+    const kb = $("kb");
+    if(!stage || !kb) return;
+
+    const baseW = estimateKeyboardBaseWidth();
+    let availW = getAvailableStageWidth(stage);
+
+    // Safety margin for subpixel rounding / scrollbars / safe-area
+    const margin = 8; // px
+    availW = Math.max(1, Math.floor(availW) - margin);
+
+    if(!baseW || !availW) return;
+
+    // Hard cap: never exceed fit-to-width
+    const maxZoom = availW / baseW;
+    const desired = KB_DESIRED_SCALE;
+
+    const zoom = Math.max(0.3, Math.min(desired, maxZoom));
+    ROOT.style.setProperty("--kbZoom", String(zoom));
+
+    // Height: measure after applying zoom (use DOM rect)
+    requestAnimationFrame(() => {
+      const rect = kb.getBoundingClientRect();
+      stage.style.height = Math.ceil(rect.height) + "px";
+    });
+  }
+
+  // Refit on viewport changes (including iOS URL bar show/hide)
+  const scheduleFit = (() => {
+    let raf = 0;
+    return () => {
+      if(raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => { raf = 0; updateKbFit(); });
+    };
+  })();
+
+  window.addEventListener("resize", scheduleFit, {passive:true});
+  window.addEventListener("orientationchange", scheduleFit, {passive:true});
+  if(window.visualViewport){
+    window.visualViewport.addEventListener("resize", scheduleFit, {passive:true});
+    window.visualViewport.addEventListener("scroll", scheduleFit, {passive:true});
+  }
+  function applyKbScale(pct){
+    const clamped = Math.max(70, Math.min(160, pct|0));
+    const scale = clamped / 100;
+    KB_DESIRED_SCALE = scale;
+    ROOT.style.setProperty("--kbScale", String(scale));
+    if(kbScaleEl) kbScaleEl.value = String(clamped);
+    if(kbScaleValEl) kbScaleValEl.textContent = `${clamped}%`;
+    try{ localStorage.setItem("kbScalePct", String(clamped)); }catch(_){}
+    updateKbFit();
+  }
+  (function initKbScale(){
+    let saved = 100;
+    try{
+      const v = localStorage.getItem("kbScalePct");
+      if(v) saved = parseInt(v,10);
+    }catch(_){}
+    applyKbScale(isFinite(saved)? saved : 100);
+    if(kbScaleEl){
+      kbScaleEl.addEventListener("input", () => applyKbScale(parseInt(kbScaleEl.value,10)));
+    }
+  })();
+
 
   // ` は無効（誤操作防止）
   function isBackquoteKey(e){
@@ -543,51 +807,62 @@
   }
 
   // ===== Virtual keyboard (JIS-ish minimal) =====
-  const KB_ROWS = [
-    // row1
-    [
-      {code:"Digit1", label:"1"}, {code:"Digit2", label:"2"}, {code:"Digit3", label:"3"}, {code:"Digit4", label:"4"},
-      {code:"Digit5", label:"5"}, {code:"Digit6", label:"6"}, {code:"Digit7", label:"7"}, {code:"Digit8", label:"8"},
-      {code:"Digit9", label:"9"}, {code:"Digit0", label:"0"},
-      {code:"Minus", label:"-"},
-      {code:"Equal", label:"^"},
-      {code:"IntlYen", label:"¥"},
-      {code:"Backspace", label:"Back", cls:"backspace wide"}
-    ],
-    // row2
-    [
-      {code:"KeyQ", label:"Q"}, {code:"KeyW", label:"W"}, {code:"KeyE", label:"E"}, {code:"KeyR", label:"R"},
-      {code:"KeyT", label:"T"}, {code:"KeyY", label:"Y"}, {code:"KeyU", label:"U"}, {code:"KeyI", label:"I"},
-      {code:"KeyO", label:"O"}, {code:"KeyP", label:"P"},
-      {code:"BracketLeft", label:"@"},
-      {code:"BracketRight", label:"["},
-      {code:"Enter", label:"Enter", cls:"enter"}
-    ],
-    // row3
-    [
-      {code:"KeyA", label:"A"}, {code:"KeyS", label:"S"}, {code:"KeyD", label:"D"}, {code:"KeyF", label:"F"},
-      {code:"KeyG", label:"G"}, {code:"KeyH", label:"H"}, {code:"KeyJ", label:"J"}, {code:"KeyK", label:"K"},
-      {code:"KeyL", label:"L"},
-      {code:"Semicolon", label:";"},
-      {code:"Quote", label:":"}, // JISでは : がこのへん。簡略表示
-      {code:"Backslash", label:"]"} // 簡略（この記号はほぼ出ないので保険）
-    ],
-    // row4
-    [
-      {code:"ShiftLeft", label:"Shift", cls:"shift"},
-      {code:"KeyZ", label:"Z"}, {code:"KeyX", label:"X"}, {code:"KeyC", label:"C"}, {code:"KeyV", label:"V"},
-      {code:"KeyB", label:"B"}, {code:"KeyN", label:"N"}, {code:"KeyM", label:"M"},
-      {code:"Comma", label:","}, {code:"Period", label:"."}, {code:"Slash", label:"/"},
-      {code:"IntlRo", label:"\\"},
-      {code:"ShiftRight", label:"Shift", cls:"shift"}
-    ],
-    // row5
-    [
-      {code:"Space", label:"", cls:"space"}
-    ]
-  ];
 
   const keyElsByCode = new Map();
+  const TAP_MODE = (window.matchMedia && window.matchMedia("(pointer:coarse)").matches) || ("ontouchstart" in window);
+  let vkShift = false;
+  function setShiftUI(on){
+    const l = keyElsByCode.get("ShiftLeft");
+    const r = keyElsByCode.get("ShiftRight");
+    [l,r].forEach(el => { if(el) el.classList.toggle("shiftOn", !!on); });
+  }
+  function charFromVK(code, label){
+    if(code === "Space") return " ";
+    if(code === "Minus") return "-";
+    if(code === "Comma") return ",";
+    if(code === "Period") return ".";
+    if(code === "Slash") return "/";
+    if(code && code.startsWith("Key")) return (vkShift ? label.toUpperCase() : label.toLowerCase());
+    if(code && code.startsWith("Digit")) return label;
+    // JIS-ish extras (mostly unused but harmless)
+    if(code === "BracketLeft") return "@";
+    if(code === "BracketRight") return "[";
+    if(code === "Backslash") return "]";
+    if(code === "IntlRo") return "\\";
+    if(code === "IntlYen") return "\\";
+    if(code === "Equal") return "^";
+    if(code === "Semicolon") return ";";
+    if(code === "Quote") return ":"; 
+    return "";
+  }
+  function handleVirtualKeyPress(code, label){
+    pressFlashByCode(code);
+    // Start with Space
+    if((state === STATE.IDLE || state === STATE.DONE) && code === "Space"){
+      resetAll();
+      ensureRunningStart();
+      return;
+    }
+    if(state !== STATE.RUN){
+      highlightNextKey();
+      return;
+    }
+    if(code === "Backspace"){ handleBackspace(); return; }
+    if(code === "Enter"){ return; } // ignored
+    if(code === "ShiftLeft" || code === "ShiftRight"){
+      vkShift = !vkShift;
+      setShiftUI(vkShift);
+      return;
+    }
+    const ch = charFromVK(code, label);
+    if(!ch) return;
+    handleCharInput(ch);
+    if(vkShift){
+      vkShift = false;
+      setShiftUI(false);
+    }
+  }
+
   function renderKeyboard(){
     const kb = $("kb");
     kb.innerHTML = "";
@@ -605,11 +880,20 @@
         }
         rowEl.appendChild(el);
         keyElsByCode.set(k.code, el);
+        // Tap/click input (mobile: use on-screen keyboard)
+        el.addEventListener("pointerdown", (ev)=>{
+          if(TAP_MODE){ ev.preventDefault(); handleVirtualKeyPress(k.code, k.label); }
+        }, {passive:false});
+        el.addEventListener("click", (ev)=>{
+          if(TAP_MODE){ ev.preventDefault(); handleVirtualKeyPress(k.code, k.label); }
+        });
       });
       kb.appendChild(rowEl);
     });
   }
   renderKeyboard();
+  // Fit keyboard into viewport without horizontal scroll
+  updateKbFit();
 
   function clearHL(){
     for(const el of keyElsByCode.values()){
