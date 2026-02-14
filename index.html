@@ -1,523 +1,143 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html lang="ja">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover" />
-<title>Runner</title>
-<style>
-  :root { color-scheme: light; }
-  body{
-    margin:0; height:100svh; width:100vw;
-    overflow:hidden;
-    background:#ddd;
-    font-family:system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans JP", sans-serif;
-    user-select:none; -webkit-user-select:none;
-  }
-  .wrap{
-    width:100vw; height:100svh;
-    position:relative;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-  }
-  .top{
-    position:absolute;
-    top:10px; right:10px;
-    display:flex; justify-content:flex-end; align-items:center;
-    margin:0;
-    z-index:2;
-  }
-  .hud{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:flex-end; }
-  .pill{
-    padding:6px 10px; border-radius:999px;
-    border:1px solid rgba(0,0,0,.18);
-    background:rgba(255,255,255,.75);
-    font-size:13px; opacity:.95;
-  }
-  canvas{
-    width:100%; height:auto; aspect-ratio: 16/6;
-    border-radius:18px;
-    border:1px solid rgba(0,0,0,.18);
-    box-shadow:0 12px 35px rgba(0,0,0,.25);
-    touch-action: manipulation;
-    background:#fff;
-  }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Quick Memo</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #1e1e1e;
+            --gutter-bg: #252526;
+            --text-color: #d4d4d4;
+            --line-number-color: #858585;
+            --accent-color: #4fc3f7;
+            --font-family: 'JetBrains Mono', monospace;
+        }
+
+        body, html {
+            margin: 0; padding: 0; height: 100%;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: var(--font-family);
+            /* スマホでのバウンススクロールを防止 */
+            overflow: hidden;
+            position: fixed;
+            width: 100%;
+        }
+
+        .container { 
+            display: flex; 
+            /* ステータスバーとiOSのセーフエリアを考慮 */
+            height: calc(100svh - 40px); 
+            width: 100%; 
+        }
+
+        #line-numbers {
+            width: 45px; padding: 20px 0; text-align: right;
+            background-color: var(--gutter-bg); color: var(--line-number-color);
+            font-size: 14px; line-height: 1.6; user-select: none; overflow: hidden;
+            border-right: 1px solid #333;
+        }
+
+        #editor {
+            flex: 1; padding: 20px; border: none; outline: none;
+            background: transparent; color: inherit; font-family: inherit;
+            font-size: 16px; line-height: 1.6; resize: none;
+            /* スマホでズレないよう、あえて折り返しを無効化（横スクロール） */
+            /* もし自動改行させたい場合は white-space: pre-wrap ですが行番号とズレます */
+            white-space: pre; 
+            overflow: auto;
+            -webkit-appearance: none; /* iOSのデフォルトスタイル解除 */
+        }
+
+        .status-bar {
+            height: 40px; background: #333;
+            display: flex; justify-content: space-between;
+            align-items: center; padding: 0 15px; font-size: 12px; color: #aaa;
+            box-sizing: border-box;
+        }
+
+        .controls { display: flex; align-items: center; }
+
+        .controls button {
+            background: #444; border: 1px solid #555; color: #eee;
+            padding: 5px 10px; cursor: pointer; font-size: 11px;
+            border-radius: 3px; margin-left: 10px;
+            /* スマホで押しやすいサイズ感 */
+            min-height: 28px;
+        }
+
+        @media (hover: hover) {
+            .controls button:hover { background: var(--accent-color); color: #000; }
+        }
+
+        /* スマホ向けに文字サイズを微調整 */
+        @media (max-width: 600px) {
+            #line-numbers { width: 35px; font-size: 12px; }
+            #editor { font-size: 14px; padding: 15px; }
+            #stats { display: none; } /* スマホでは文字数情報を簡略化 */
+        }
+    </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="top">
-      <div class="hud">
-        <div class="pill" id="score">SCORE: 0</div>
-        <div class="pill" id="best">BEST: 0</div>
-      </div>
+
+    <div class="container">
+        <div id="line-numbers">1</div>
+        <textarea id="editor" spellcheck="false" autocomplete="off" placeholder="入力を開始..."></textarea>
     </div>
-    <canvas id="c" width="960" height="360"></canvas>
-  </div>
 
-<script>
-(() => {
-  const canvas = document.getElementById("c");
-  const ctx = canvas.getContext("2d");
+    <div class="status-bar">
+        <span id="stats">Lines: 1 | Chars: 0</span>
+        <div class="controls">
+            <button onclick="downloadText()">Save (.txt)</button>
+        </div>
+    </div>
 
-  // Fit canvas to the visible viewport (mobile address bar safe)
-  const BASE_W = canvas.width;
-  const BASE_H = canvas.height;
+    <script>
+        const editor = document.getElementById('editor');
+        const lineNumbers = document.getElementById('line-numbers');
+        const stats = document.getElementById('stats');
 
-  function fitCanvas(){
-    const vv = window.visualViewport;
-    const vw = vv ? vv.width : window.innerWidth;
-    const vh = vv ? vv.height : window.innerHeight;
-    const scale = Math.min(vw / BASE_W, vh / BASE_H);
-    canvas.style.width  = Math.floor(BASE_W * scale) + "px";
-    canvas.style.height = Math.floor(BASE_H * scale) + "px";
-  }
-  fitCanvas();
-  window.addEventListener("resize", fitCanvas);
-  if(window.visualViewport){
-    window.visualViewport.addEventListener("resize", fitCanvas);
-    window.visualViewport.addEventListener("scroll", fitCanvas);
-  }
-
-
-  const $score = document.getElementById("score");
-  const $best  = document.getElementById("best");
-
-  function fixDpi(){
-    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-    const cssW = canvas.clientWidth, cssH = canvas.clientHeight;
-    canvas.width  = Math.round(cssW * dpr);
-    canvas.height = Math.round(cssH * dpr);
-    ctx.setTransform(dpr,0,0,dpr,0,0);
-  }
-  fixDpi();
-  window.addEventListener("resize", fixDpi);
-
-  // ===== Game Params =====
-  const GROUND_Y = 300;
-  const GRAVITY  = 2200;
-  const JUMP_V   = 780;
-  const MAX_JUMPS = 1;     // single jump only
-
-  // Day/Night cycle (seconds)
-  const CYCLE_SEC = 18;    // switch every 18s (day->night->day)
-
-  // difficulty
-  let speed = 420;
-  let spawnMin = 0.75;
-  let spawnMax = 1.35;
-
-  // ===== State =====
-  let playing = false;
-  let gameOver = false;
-  let tPrev = performance.now();
-  let time = 0;           // for day/night + parallax
-  let score = 0;
-
-  let best = Number(localStorage.getItem("onekey_best") || 0);
-  $best.textContent = `BEST: ${best}`;
-
-  const rand = (a,b)=> a + Math.random()*(b-a);
-  const clamp = (v,a,b)=> Math.max(a, Math.min(b, v));
-
-  function isNight(){
-    return (Math.floor(time / CYCLE_SEC) % 2) === 1;
-  }
-
-  // ===== Player =====
-  const player = {
-    x: 120,
-    y: GROUND_Y - 46,
-    w: 34, h: 46,
-    vy: 0,
-    jumps: 0,
-    blink: 0
-  };
-
-  // obstacles (ground + flying rectangles)
-  // types: "ground" | "fly"
-  const obs = [];
-  let spawnTimer = rand(spawnMin, spawnMax);
-
-  function reset(){
-    playing = true;
-    gameOver = false;
-
-    speed = 420;
-    spawnMin = 0.75;
-    spawnMax = 1.35;
-
-    time = 0;
-    score = 0;
-    obs.length = 0;
-
-    player.y = GROUND_Y - player.h;
-    player.vy = 0;
-    player.jumps = 0;
-    player.blink = 0;
-
-    spawnTimer = rand(spawnMin, spawnMax);
-    tPrev = performance.now();
-
-    $score.textContent = `SCORE: 0`;
-  }
-
-  function jumpOrStart(){
-    if(!playing || gameOver){
-      reset();
-      return;
-    }
-    if(player.jumps < MAX_JUMPS){
-      player.vy = -JUMP_V;
-      player.jumps++;
-      player.blink = 0.12;
-    }
-  }
-
-  const isTouchDevice =
-    window.matchMedia?.("(pointer: coarse)").matches ||
-    (navigator.maxTouchPoints || 0) > 0;
-
-  // PC: スペースキーのみ
-  window.addEventListener("keydown", (e)=>{
-    if(e.code==="Space"){
-      e.preventDefault();
-      jumpOrStart();
-    }
-  });
-
-  // モバイル/タブレット: 画面のどこをタップしてもジャンプ（canvas外でもOK）
-  if(isTouchDevice){
-    document.addEventListener("pointerdown", (e)=>{
-      // 画面スクロールやダブルタップズームの誤動作を抑える
-      e.preventDefault();
-      jumpOrStart();
-    }, { passive:false });
-  }
-
-  // ===== Collision =====
-  function hit(a,b){
-    return a.x < b.x + b.w && a.x + a.w > b.x &&
-           a.y < b.y + b.h && a.y + a.h > b.y;
-  }
-
-  function cw(){ return canvas.clientWidth; }
-  function ch(){ return canvas.clientHeight; }
-
-  // ===== Spawning =====
-  function spawnObstacle(){
-    // Flying rectangles: include "will hit you if you don't jump" lanes
-    // Probability increases a bit with score
-    const flyChance = clamp(0.20 + score/1800, 0.20, 0.55);
-
-    if(Math.random() < flyChance){
-      const w = rand(22, 40);
-      const h = rand(16, 26);
-
-      // 3 height bands:
-      //  - LOW: collide with player while running; jump can clear above it
-      //  - MID/HIGH: classic "air" obstacles
-      const r = Math.random();
-      let y;
-
-      const groundTop = GROUND_Y - player.h;
-
-      if(r < 0.45){
-        // LOW flyer: near ground so standing collides; jumping clears
-        // place it just a bit above ground line
-        y = (GROUND_Y - h) - rand(2, 10);
-      } else if(r < 0.85){
-        // MID
-        y = rand(groundTop - 110, groundTop - 70);
-      } else {
-        // HIGH
-        y = rand(groundTop - 160, groundTop - 120);
-      }
-
-      obs.push({
-        type: "fly",
-        x: cw() + 60,
-        y,
-        w, h,
-        // small bob to feel alive, but keep low flyer mostly stable
-        t: rand(0, 10),
-        amp: (r < 0.45) ? rand(0.5, 2.0) : rand(2.0, 6.0),
-        freq: rand(2.0, 3.6),
-        passed:false
-      });
-      return;
-    }
-
-    // Ground rectangle obstacles
-    const tall = Math.random() < 0.28;
-    const baseH = tall ? rand(56, 78) : rand(28, 46);
-    const w = tall ? rand(16, 28) : rand(18, 32);
-
-    obs.push({
-      type:"ground",
-      x: cw() + 40,
-      y: GROUND_Y - baseH,
-      w, h: baseH,
-      passed:false
-    });
-
-    // occasional double
-    if(Math.random() < 0.18){
-      const tall2 = Math.random() < 0.28;
-      const h2 = tall2 ? rand(56, 78) : rand(28, 46);
-      const w2 = tall2 ? rand(16, 28) : rand(18, 32);
-      obs.push({
-        type:"ground",
-        x: cw() + 40 + w + rand(14, 24),
-        y: GROUND_Y - h2,
-        w:w2, h:h2,
-        passed:false
-      });
-    }
-  }
-
-  // ===== Background elements =====
-  const stars = Array.from({length: 80}, () => ({
-    x: Math.random()*1000,
-    y: Math.random()*240,
-    r: Math.random()*1.5 + 0.5,
-    s: Math.random()*30 + 20,
-    p: Math.random()
-  }));
-
-  const clouds = Array.from({length: 5}, () => ({
-    x: Math.random()*1000,
-    y: Math.random()*120 + 20,
-    w: rand(70, 140),
-    h: rand(18, 32),
-    s: rand(0.10, 0.25)
-  }));
-
-  // ===== Update =====
-  function update(dt){
-    if(!playing || gameOver) return;
-
-    time += dt;
-
-    // difficulty increase
-    speed += dt * 10;
-    spawnMin = Math.max(0.45, spawnMin - dt*0.006);
-    spawnMax = Math.max(0.85, spawnMax - dt*0.006);
-
-    // score
-    score += dt * 10;
-    $score.textContent = `SCORE: ${Math.floor(score)}`;
-
-    // spawn
-    spawnTimer -= dt;
-    if(spawnTimer <= 0){
-      spawnObstacle();
-      spawnTimer = rand(spawnMin, spawnMax);
-    }
-
-    // player physics
-    player.vy += GRAVITY * dt;
-    player.y  += player.vy * dt;
-
-    const groundTop = GROUND_Y - player.h;
-    if(player.y >= groundTop){
-      player.y = groundTop;
-      player.vy = 0;
-      player.jumps = 0;
-    }
-
-    player.blink = Math.max(0, player.blink - dt);
-
-    // obstacles update
-    for(const o of obs){
-      o.x -= speed * dt;
-
-      if(o.type === "fly"){
-        o.t += dt;
-        // gentle bob, clamped so low flyers don't drift too much
-        const dy = Math.sin(o.t * o.freq) * o.amp * dt;
-        o.y = clamp(o.y + dy, 10, GROUND_Y - o.h - 2);
-      }
-
-      // pass bonus for any obstacle type
-      if(!o.passed && o.x + o.w < player.x){
-        o.passed = true;
-        score += 5;
-      }
-    }
-
-    // remove offscreen
-    while(obs.length && obs[0].x + obs[0].w < -90) obs.shift();
-
-    // collision
-    const pBox = {x: player.x, y: player.y, w: player.w, h: player.h};
-    for(const o of obs){
-      // slightly forgiving hitbox
-      const ob = { x:o.x+2, y:o.y+2, w:o.w-4, h:o.h-4 };
-      if(hit(pBox, ob)){
-        gameOver = true;
-        const finalScore = Math.floor(score);
-        if(finalScore > best){
-          best = finalScore;
-          localStorage.setItem("onekey_best", best);
-          $best.textContent = `BEST: ${best}`;
+        function updateEditor() {
+            const text = editor.value;
+            const lines = text.split('\n');
+            lineNumbers.innerText = Array.from({length: lines.length}, (_, i) => i + 1).join('\n');
+            stats.innerText = `Lines: ${lines.length} | Chars: ${text.length}`;
+            localStorage.setItem('quick-memo-v5', text);
         }
-        break;
-      }
-    }
-  }
 
-  // ===== Draw =====
-  function draw(){
-    const w = cw(), h = ch();
-    const night = isNight();
-
-    // palette (monochrome)
-    const BG   = night ? "#000" : "#fff";
-    const FG   = night ? "#fff" : "#000";
-    const SOFT = night ? "rgba(255,255,255,.12)" : "rgba(0,0,0,.10)";
-    const SOFT2= night ? "rgba(255,255,255,.20)" : "rgba(0,0,0,.18)";
-
-    // background fill
-    ctx.clearRect(0,0,w,h);
-    ctx.fillStyle = BG;
-    ctx.fillRect(0,0,w,h);
-
-    // stars at night
-    if(night){
-      ctx.globalAlpha = 0.95;
-      ctx.fillStyle = "rgba(255,255,255,.90)";
-      for(const s of stars){
-        s.x -= (speed*0.12 + s.s) * 0.016;
-        if(s.x < -10){ s.x = w + 10; s.y = Math.random()*240; }
-        // twinkle
-        if(((time*0.7 + s.p*10) % 1.0) < 0.65){
-          ctx.beginPath();
-          ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
-          ctx.fill();
+        function getTimestampFilename() {
+            const now = new Date();
+            const pad = (n) => String(n).padStart(2, '0');
+            return `memo_${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.txt`;
         }
-      }
-      ctx.globalAlpha = 1;
-    } else {
-      // clouds at day (monochrome)
-      ctx.fillStyle = "rgba(0,0,0,.10)";
-      for(const c of clouds){
-        c.x -= speed * c.s * 0.016;
-        if(c.x < -c.w - 30){
-          c.x = w + 30;
-          c.y = Math.random()*120 + 20;
-          c.w = rand(70, 140);
-          c.h = rand(18, 32);
-          c.s = rand(0.10, 0.25);
+
+        function downloadText() {
+            const text = editor.value;
+            if (!text) return;
+            const blob = new Blob([text], { type: 'text/plain' });
+            const anchor = document.createElement('a');
+            anchor.download = getTimestampFilename();
+            anchor.href = window.URL.createObjectURL(blob);
+            anchor.click();
+            setTimeout(() => window.URL.revokeObjectURL(anchor.href), 100);
         }
-        // simple cloud shape
-        ctx.beginPath();
-        ctx.ellipse(c.x, c.y, c.w*0.28, c.h*0.45, 0, 0, Math.PI*2);
-        ctx.ellipse(c.x + c.w*0.18, c.y + 2, c.w*0.22, c.h*0.38, 0, 0, Math.PI*2);
-        ctx.ellipse(c.x - c.w*0.18, c.y + 3, c.w*0.20, c.h*0.34, 0, 0, Math.PI*2);
-        ctx.fill();
-      }
-    }
 
-    // ground
-    ctx.fillStyle = SOFT;
-    ctx.fillRect(0, GROUND_Y, w, h-GROUND_Y);
-    ctx.strokeStyle = SOFT2;
-    ctx.beginPath();
-    ctx.moveTo(0, GROUND_Y+0.5);
-    ctx.lineTo(w, GROUND_Y+0.5);
-    ctx.stroke();
+        editor.addEventListener('input', updateEditor);
+        
+        // スクロールの同期（縦・横両方）
+        editor.addEventListener('scroll', () => {
+            lineNumbers.scrollTop = editor.scrollTop;
+        });
 
-    // obstacles (all rectangles)
-    for(const o of obs){
-      ctx.fillStyle = FG;
-      roundRect(ctx, o.x, o.y, o.w, o.h, 7);
-      ctx.fill();
-
-      // inner cut for style
-      ctx.fillStyle = night ? "rgba(0,0,0,.25)" : "rgba(255,255,255,.35)";
-      roundRect(ctx, o.x+3, o.y+3, o.w-6, o.h-6, 6);
-      ctx.fill();
-    }
-
-    // player (rectangle)
-    if(player.blink > 0){
-      ctx.save();
-      ctx.shadowBlur = 18;
-      ctx.shadowColor = night ? "rgba(255,255,255,.65)" : "rgba(0,0,0,.35)";
-      ctx.fillStyle = FG;
-      roundRect(ctx, player.x, player.y, player.w, player.h, 10);
-      ctx.fill();
-      ctx.restore();
-    }
-
-    ctx.fillStyle = FG;
-    roundRect(ctx, player.x, player.y, player.w, player.h, 10);
-    ctx.fill();
-
-    // face (invert)
-    const face = night ? "rgba(0,0,0,.55)" : "rgba(255,255,255,.55)";
-    ctx.fillStyle = face;
-    ctx.beginPath(); ctx.arc(player.x+11, player.y+18, 2.2, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(player.x+23, player.y+18, 2.2, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.roundRect(player.x+12, player.y+28, 12, 5, 3); ctx.fill();
-
-    // overlays (start / game over)
-    if(!playing){
-      overlay(isTouchDevice ? "TAP" : "PRESS SPACE", "to start", night);
-    } else if(gameOver){
-      overlay("GAME OVER", isTouchDevice ? "Tap to restart" : "Press Space to restart", night);
-    }
-  }
-
-  function overlay(main, sub, night){
-    const w = cw(), h = ch();
-    const FG = night ? "#fff" : "#000";
-    const BG = night ? "rgba(255,255,255,.10)" : "rgba(0,0,0,.10)";
-    const PANEL = night ? "rgba(0,0,0,.55)" : "rgba(255,255,255,.78)";
-
-    ctx.fillStyle = PANEL;
-    roundRect(ctx, 22, 22, w-44, h-44, 18);
-    ctx.fill();
-
-    ctx.fillStyle = FG;
-    ctx.font = "800 34px system-ui, sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText(main, w/2, h/2 - 10);
-
-    ctx.globalAlpha = 0.85;
-    ctx.font = "600 16px system-ui, sans-serif";
-    ctx.fillText(sub, w/2, h/2 + 22);
-    ctx.globalAlpha = 1;
-
-    ctx.fillStyle = BG;
-    ctx.font = "600 13px system-ui, sans-serif";
-    ctx.fillText(`SCORE: ${Math.floor(score)}  /  BEST: ${best}`, w/2, h/2 + 52);
-    ctx.textAlign = "start";
-  }
-
-  function roundRect(ctx, x, y, w, h, r){
-    r = Math.min(r, w/2, h/2);
-    ctx.beginPath();
-    ctx.moveTo(x+r, y);
-    ctx.arcTo(x+w, y, x+w, y+h, r);
-    ctx.arcTo(x+w, y+h, x, y+h, r);
-    ctx.arcTo(x, y+h, x, y, r);
-    ctx.arcTo(x, y, x+w, y, r);
-    ctx.closePath();
-  }
-
-  function loop(now){
-    const dt = Math.min(0.033, (now - tPrev)/1000);
-    tPrev = now;
-    update(dt);
-    draw();
-    requestAnimationFrame(loop);
-  }
-
-  playing = false;
-  requestAnimationFrame(loop);
-})();
-</script>
+        window.onload = () => {
+            const savedData = localStorage.getItem('quick-memo-v5');
+            if (savedData) {
+                editor.value = savedData;
+                updateEditor();
+            }
+        };
+    </script>
 </body>
 </html>
