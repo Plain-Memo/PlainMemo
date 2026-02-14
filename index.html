@@ -7,11 +7,11 @@
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-color: #121212; /* より深い黒 */
+            --bg-color: #121212;
             --gutter-bg: #1a1a1a;
             --text-color: #e0e0e0;
             --line-number-color: #555;
-            --accent-color: #ffffff; /* アクセントは白でシンプルに */
+            --accent-color: #ffffff;
             --font-family: 'JetBrains Mono', monospace;
         }
 
@@ -25,6 +25,7 @@
             width: 100%;
         }
 
+        /* メインコンテナ（入力エリア + 行番号） */
         .container { 
             display: flex; 
             height: calc(100svh - 35px); 
@@ -44,18 +45,23 @@
             font-size: 16px; line-height: 1.6; resize: none;
             white-space: pre; overflow: auto;
             -webkit-appearance: none;
+            caret-color: var(--accent-color); /* カーソルの色 */
         }
 
+        /* 下部ステータスバー */
         .status-bar {
             height: 35px; background: #1a1a1a;
             display: flex; justify-content: space-between;
             align-items: center; padding: 0 15px; font-size: 11px; color: #777;
             border-top: 1px solid #222;
+            box-sizing: border-box;
         }
 
         .logo { font-weight: 500; color: #999; letter-spacing: 1px; }
 
         .controls { display: flex; align-items: center; }
+
+        #stats { margin-right: 5px; }
 
         .controls button {
             background: transparent; border: 1px solid #444; color: #aaa;
@@ -64,13 +70,16 @@
             text-transform: uppercase;
         }
 
+        /* PCでのホバー時のみ色を変える */
         @media (hover: hover) {
             .controls button:hover { border-color: #fff; color: #fff; }
         }
 
+        /* スマホ・タブレット向けの調整 */
         @media (max-width: 600px) {
-            #line-numbers { width: 40px; }
-            #stats { display: none; }
+            #line-numbers { width: 40px; font-size: 12px; }
+            #editor { font-size: 15px; padding: 15px; }
+            #stats { display: none; } /* スマホでは文字数情報を非表示にしてスッキリ */
         }
     </style>
 </head>
@@ -94,44 +103,77 @@
         const lineNumbers = document.getElementById('line-numbers');
         const stats = document.getElementById('stats');
 
+        // 状態更新（行番号・文字数・保存）
         function updateEditor() {
             const text = editor.value;
             const lines = text.split('\n');
+            
+            // 行番号の描画
             lineNumbers.innerText = Array.from({length: lines.length}, (_, i) => i + 1).join('\n');
+            
+            // ステータス更新
             stats.innerText = `LN: ${lines.length} | CH: ${text.length}`;
-            localStorage.setItem('plain-memo-data', text);
+            
+            // ローカルストレージに保存
+            localStorage.setItem('plain-memo-data-v1', text);
         }
 
+        // ファイル名の生成 (memo_YYYYMMDDHHMMSS.txt)
         function getTimestampFilename() {
             const now = new Date();
             const pad = (n) => String(n).padStart(2, '0');
-            return `memo_${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.txt`;
+            const Y = now.getFullYear();
+            const M = pad(now.getMonth() + 1);
+            const D = pad(now.getDate());
+            const h = pad(now.getHours());
+            const m = pad(now.getMinutes());
+            const s = pad(now.getSeconds());
+            return `memo_${Y}${M}${D}${h}${m}${s}.txt`;
         }
 
+        // ダウンロード実行（文字化け対策BOM付き）
         function downloadText() {
             const text = editor.value;
-            if (!text) return;
-            const blob = new Blob([text], { type: 'text/plain' });
+            if (!text) {
+                alert("内容が空です。");
+                return;
+            }
+
+            // UTF-8のBOMを追加して、スマホでの表示時の文字化けを防止
+            const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
+            const blob = new Blob([bom, text], { type: 'text/plain;charset=utf-8' });
+            
             const anchor = document.createElement('a');
             anchor.download = getTimestampFilename();
             anchor.href = window.URL.createObjectURL(blob);
             anchor.click();
+            
+            // メモリ解放
             setTimeout(() => window.URL.revokeObjectURL(anchor.href), 100);
         }
 
+        // イベントリスナー
         editor.addEventListener('input', updateEditor);
-        editor.addEventListener('scroll', () => { lineNumbers.scrollTop = editor.scrollTop; });
+        
+        // スクロール同期
+        editor.addEventListener('scroll', () => {
+            lineNumbers.scrollTop = editor.scrollTop;
+        });
 
+        // ページ読み込み時の処理
         window.onload = () => {
-            const savedData = localStorage.getItem('plain-memo-data');
+            const savedData = localStorage.getItem('plain-memo-data-v1');
             if (savedData) {
                 editor.value = savedData;
                 updateEditor();
             }
-            // PCの場合は自動でフォーカス
-            if (!('ontouchstart' in window)) editor.focus();
+            // PCブラウザのみ自動フォーカス
+            if (!('ontouchstart' in window)) {
+                editor.focus();
+            }
         };
 
+        // ショートカットキー対応 (Ctrl/Cmd + S)
         window.addEventListener('keydown', (e) => {
             if ((e.ctrlKey || e.metaKey) && e.key === 's') {
                 e.preventDefault();
