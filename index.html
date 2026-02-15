@@ -17,12 +17,8 @@
       --font-family:'JetBrains Mono', monospace;
       --line-height-mult:1.6;
       --base-font-size: 16px;
-
-      /* UI colors */
-      --ui-bg:#121212;
-      --ui-border:#444;
-      --ui-text:#e0e0e0;
-      --ui-focus:#ffffff;
+      --ui-bg:#1a1a1a;
+      --ui-border:#222;
     }
 
     body, html{
@@ -70,19 +66,20 @@
       font-size: var(--base-font-size);
       line-height: var(--line-height-mult);
       resize:none;
-      overflow:auto;
+      overflow-y:auto;
+      overflow-x:hidden;
       -webkit-appearance:none;
       caret-color:var(--accent-color);
       z-index:2;
       box-sizing:border-box;
-      white-space:pre;
+      /* Auto Wrap */
+      white-space: pre-wrap;
+      word-break: break-all;
     }
 
     #current-line{
       position:absolute;
-      top:0;
-      left:0;
-      right:0;
+      top:0; left:0; right:0;
       height: calc(var(--base-font-size) * var(--line-height-mult));
       background:var(--highlight-line-bg);
       opacity:0.85;
@@ -93,65 +90,41 @@
 
     .status-bar{
       height:35px;
-      background:#1a1a1a;
+      background:var(--ui-bg);
       display:flex;
       justify-content:space-between;
       align-items:center;
       padding:0 15px;
       font-size:11px;
       color:#777;
-      border-top:1px solid #222;
+      border-top:1px solid var(--ui-border);
       box-sizing:border-box;
-    }
-
-    .controls{
-      display:flex;
-      align-items:center;
-      gap:15px;
-    }
-
-    .wrap-controls select, .wrap-controls input{
-      background:var(--ui-bg);
-      border:1px solid var(--ui-border);
-      color:var(--ui-text);
-      font-size:10px;
-      padding:3px 6px;
-      border-radius:2px;
-      outline:none;
     }
 
     .controls button{
       background:transparent;
-      border:1px solid var(--ui-border);
+      border:1px solid #444;
       color:#aaa;
       padding:3px 10px;
       cursor:pointer;
       font-size:10px;
       border-radius:2px;
-      transition:0.2s;
     }
 
     #toast{
-      position:fixed;
-      bottom:60px;
-      left:50%;
+      position:fixed; bottom:60px; left:50%;
       transform:translateX(-50%);
-      background:#1f1f1f;
-      color:#fff;
-      padding:8px 16px;
-      font-size:12px;
-      border-radius:6px;
-      opacity:0;
-      pointer-events:none;
-      transition:0.25s;
-      border:1px solid #333;
-      z-index:999;
+      background:#1f1f1f; color:#fff;
+      padding:8px 16px; font-size:12px;
+      border-radius:6px; opacity:0;
+      pointer-events:none; transition:0.25s;
+      border:1px solid #333; z-index:999;
     }
     #toast.show{ opacity:1; }
 
     #mirror{
       position:absolute; top:-9999px; left:-9999px; visibility:hidden;
-      white-space:pre-wrap; word-break:break-word; overflow-wrap:anywhere;
+      white-space:pre-wrap; word-break:break-all;
       font-size: var(--base-font-size);
       line-height: var(--line-height-mult);
     }
@@ -162,21 +135,13 @@
   <div class="container">
     <div id="line-numbers">1</div>
     <div id="current-line"></div>
-    <textarea id="editor" spellcheck="false" autocomplete="off" placeholder="Type something..."></textarea>
+    <textarea id="editor" spellcheck="false" autocomplete="off" placeholder="Start typing..."></textarea>
   </div>
 
   <div class="status-bar">
     <div style="font-weight:500; color:#999; letter-spacing:1px;">PLAIN MEMO</div>
-    <div class="controls">
+    <div class="controls" style="display:flex; gap:15px; align-items:center;">
       <span id="stats">LN: 1 | CH: 0</span>
-      <div class="wrap-controls">
-        <select id="wrapMode">
-          <option value="auto">Auto Wrap</option>
-          <option value="col">Column Wrap</option>
-          <option value="off" selected>No Wrap</option>
-        </select>
-        <input id="wrapCol" type="number" min="20" max="300" value="80" style="display:none; width:45px;" />
-      </div>
       <button onclick="downloadText()">Export</button>
     </div>
   </div>
@@ -191,13 +156,8 @@
     const toastEl = document.getElementById('toast');
     const currentLineEl = document.getElementById('current-line');
     const mirror = document.getElementById('mirror');
-    const wrapModeSel = document.getElementById('wrapMode');
-    const wrapColInput = document.getElementById('wrapCol');
 
     const DATA_KEY = 'plain-memo-data-v1';
-    const WRAP_MODE_KEY = 'plain-memo-wrap-mode';
-    const FONT_SIZE = 16;
-    const LINE_HEIGHT = Math.round(FONT_SIZE * 1.6);
 
     function showToast(msg){
       toastEl.textContent = msg;
@@ -205,38 +165,12 @@
       setTimeout(() => toastEl.classList.remove('show'), 1200);
     }
 
-    function applyWrapMode(){
-      const mode = wrapModeSel.value;
-      wrapColInput.style.display = (mode === 'col') ? 'inline-block' : 'none';
-
-      if (mode === 'auto') {
-        editor.style.whiteSpace = 'pre-wrap';
-        editor.style.maxWidth = '';
-      } else if (mode === 'col') {
-        editor.style.whiteSpace = 'pre-wrap';
-        editor.style.maxWidth = `${wrapColInput.value}ch`;
-      } else {
-        editor.style.whiteSpace = 'pre';
-        editor.style.maxWidth = '';
-      }
-      
-      localStorage.setItem(WRAP_MODE_KEY, mode);
-      syncMirrorStyle();
-      updateEditor();
-      updateCurrentLineHighlight();
-    }
-
     function updateEditor(){
       const text = editor.value;
-      // 論理的な改行数で計算
       const lines = text.split('\n').length;
-      
       let numbers = "";
-      for (let i = 1; i <= lines; i++) {
-        numbers += i + "\n";
-      }
+      for (let i = 1; i <= lines; i++) numbers += i + "\n";
       lineNumbers.textContent = numbers;
-
       stats.innerText = `LN: ${lines} | CH: ${text.length}`;
       localStorage.setItem(DATA_KEY, text);
     }
@@ -246,7 +180,6 @@
       mirror.style.width = cs.width;
       mirror.style.padding = cs.padding;
       mirror.style.boxSizing = cs.boxSizing;
-      mirror.style.whiteSpace = editor.style.whiteSpace;
     }
 
     function getCaretVisualTop(){
@@ -264,53 +197,42 @@
       currentLineEl.style.transform = `translateY(${Math.round(y)}px)`;
     }
 
+    function getFormattedTimestamp() {
+      const now = new Date();
+      const pad = (n) => n.toString().padStart(2, '0');
+      const Y = now.getFullYear();
+      const M = pad(now.getMonth() + 1);
+      const D = pad(now.getDate());
+      const h = pad(now.getHours());
+      const m = pad(now.getMinutes());
+      const s = pad(now.getSeconds());
+      return `${Y}${M}${D}${h}${m}${s}`;
+    }
+
     function downloadText(){
       if (!editor.value) return showToast("Empty");
-      
-      // UTF-8のBOMを付与してモバイルでの文字化けを防止
       const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
       const blob = new Blob([bom, editor.value], { type: 'text/plain;charset=utf-8' });
-      
       const a = document.createElement('a');
       const url = URL.createObjectURL(blob);
       a.href = url;
-      a.download = `memo_${Date.now()}.txt`;
+      a.download = `Memo_${getFormattedTimestamp()}.txt`;
       a.click();
-      
       setTimeout(() => URL.revokeObjectURL(url), 100);
       showToast("✔ Exported");
     }
 
-    // --- Event Listeners ---
-    editor.addEventListener('input', () => { 
-      updateEditor(); 
-      updateCurrentLineHighlight(); 
-    });
-
-    // スクロール時の同期を強化
+    editor.addEventListener('input', () => { updateEditor(); updateCurrentLineHighlight(); });
     editor.addEventListener('scroll', () => {
       lineNumbers.scrollTop = editor.scrollTop;
       updateCurrentLineHighlight();
     });
 
-    ['click','keyup','select'].forEach(ev => {
-      editor.addEventListener(ev, updateCurrentLineHighlight);
-    });
+    ['click','keyup','select'].forEach(ev => editor.addEventListener(ev, updateCurrentLineHighlight));
+    window.addEventListener('resize', () => { syncMirrorStyle(); updateCurrentLineHighlight(); });
 
-    wrapModeSel.addEventListener('change', applyWrapMode);
-    wrapColInput.addEventListener('change', applyWrapMode);
-
-    window.addEventListener('resize', () => {
-      syncMirrorStyle();
-      updateCurrentLineHighlight();
-    });
-
-    // --- Keyboard Actions ---
     editor.addEventListener('keydown', (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault();
-        downloadText();
-      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); downloadText(); }
       if (e.key === 'Tab') {
         e.preventDefault();
         const start = editor.selectionStart;
@@ -323,10 +245,7 @@
 
     window.onload = () => {
       editor.value = localStorage.getItem(DATA_KEY) || "";
-      const savedMode = localStorage.getItem(WRAP_MODE_KEY);
-      if (savedMode) wrapModeSel.value = savedMode;
-      
-      applyWrapMode();
+      syncMirrorStyle();
       updateEditor();
       if (!('ontouchstart' in window)) editor.focus();
     };
