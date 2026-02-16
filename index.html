@@ -88,6 +88,12 @@ input{ -webkit-user-select:text; user-select:text; }
 
 .swipe-wrap{ position:relative; overflow:hidden; }
 
+/* ===== Swipe表示：通常は行が削除ボタンを完全に隠す ===== */
+.swipe-wrap{ width:100%; }
+.row{ width:100%; position:relative; z-index:2; }
+.actions{ z-index:1; }
+
+
 .actions{
   position:absolute;
   top:0; right:0; bottom:0;
@@ -100,7 +106,14 @@ input{ -webkit-user-select:text; user-select:text; }
   color:#fff;
   font-weight:900;
 }
-.edit .actions{ display:none !important; }
+.edit .actions{
+  opacity:0;
+  pointer-events:none;
+}
+.edit .swipe-wrap.show-actions .actions{
+  opacity:1;
+  pointer-events:auto;
+}
 
 /* =======================
    Row
@@ -191,6 +204,22 @@ input{ -webkit-user-select:text; user-select:text; }
   color:#fff;
   padding:0 14px;
 }
+
+
+/* マイナス記号はフォントを使わずバーで描画（端末差ゼロで完全中央） */
+.del{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.del .minus-bar{
+  display:block;
+  width:14px;
+  height:3px;
+  background:#fff;
+  border-radius:999px;
+}
+
 </style>
 </head>
 
@@ -227,16 +256,52 @@ document.addEventListener("gesturestart", e=>e.preventDefault(),{passive:false})
 document.addEventListener("gesturechange", e=>e.preventDefault(),{passive:false});
 document.addEventListener("gestureend", e=>e.preventDefault(),{passive:false});
 
+/* ===== DOM（iOS/Safariでも確実に動かすため明示取得）===== */
+const app      = document.getElementById("app");
+const list     = document.getElementById("list");
+const editBtn  = document.getElementById("editBtn");
+const trashBtn = document.getElementById("trashBtn");
+const shareBtn = document.getElementById("shareBtn");
+const plusBtn  = document.getElementById("plusBtn");
+const inputWrap= document.getElementById("inputWrap");
+const newText  = document.getElementById("newText");
+
+function uid(){
+  try{
+    if (crypto && crypto.randomUUID) return crypto.randomUUID();
+  }catch{}
+  return "id_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2);
+}
+
 const KEY="shopping_list_ios_final_v2";
 let items=[];
 let editMode=false;
 let openId=null;
+let openEditId=null;
 let dragWrap=null;
 
 load(); render();
 
+// 画面のどこかをタップしたら開いている削除を閉じる（通常モードのみ）
+document.addEventListener("pointerdown",(e)=>{
+  if(editMode){
+    if(!openEditId) return;
+    if(e.target.closest(".actions")) return;
+    if(e.target.closest(".swipe-wrap")) return;
+    openEditId=null;
+    render();
+    return;
+  }
+  if(!openId) return;
+  if(e.target.closest(".actions")) return; // 削除ボタンのタップは閉じない
+  if(e.target.closest(".swipe-wrap")) return; // 行内タップは row 側で処理
+  openId=null;
+  render();
+},{capture:true});
+
 editBtn.onclick=()=>{
   openId=null;
+  openEditId=null;
   editMode=!editMode;
   app.classList.toggle("edit",editMode);
   editBtn.textContent=editMode?"✓":"編集";
@@ -275,7 +340,7 @@ newText.onkeydown=e=>{
 function commitAdd(){
   const t=newText.value.trim();
   if(!t)return;
-  items.push({id:crypto.randomUUID(),text:t,done:false});
+  items.push({id:uid(),text:t,done:false});
   newText.value="";
   save(); render();
   newText.focus();
@@ -304,28 +369,39 @@ function render(){
     const wrap=document.createElement("div");
     wrap.className="swipe-wrap";
     wrap.dataset.id=it.id;
+    if(editMode && openEditId===it.id) wrap.classList.add("show-actions");
 
-    if(!editMode){
-      const actions=document.createElement("div");
-      actions.className="actions";
-      const b=document.createElement("button");
-      b.textContent="削除";
-      b.onclick=()=>removeOne(it.id);
-      actions.appendChild(b);
-      wrap.appendChild(actions);
-    }
+    // 右側の削除ボタン（通常：左スワイプ、編集：−タップで表示）
+    const actions=document.createElement("div");
+    actions.className="actions";
+    const b=document.createElement("button");
+    b.type="button";
+    b.textContent="削除";
+    b.onclick=()=>removeOne(it.id);
+    actions.appendChild(b);
+    wrap.appendChild(actions);
 
     const row=document.createElement("div");
     row.className="row";
-    row.style.transform=editMode?"translateX(0)":
-      (openId===it.id?"translateX(-98px)":"translateX(0)");
+    row.style.transform = editMode
+      ? (openEditId===it.id ? "translateX(-98px)" : "translateX(0)")
+      : (openId===it.id ? "translateX(-98px)" : "translateX(0)");
 
     const left=document.createElement("div");
     left.className="leftSlot";
     const minus=document.createElement("button");
     minus.className="del";
-    minus.textContent="−";
-    minus.onclick=()=>removeOne(it.id);
+    minus.innerHTML='<span class="minus-bar" aria-hidden="true"></span>';
+    minus.style.display = editMode ? "inline-flex" : "none";
+    minus.type="button";
+    minus.onclick=()=>{
+      if(!editMode) return;
+      // 1行だけ開く
+      openEditId = (openEditId===it.id) ? null : it.id;
+      // 通常モードの開きは閉じる
+      openId = null;
+      render();
+    };
     left.appendChild(minus);
     row.appendChild(left);
 
@@ -355,6 +431,18 @@ function render(){
     };
     right.appendChild(handle);
     row.appendChild(right);
+
+    row.onclick=(e)=>{
+      // 編集モードで開いている削除を閉じる（−や削除ボタン自体は除外）
+      if(editMode){
+        if(e.target.closest(".del")) return;
+        if(e.target.closest(".actions")) return;
+        if(openEditId){ openEditId=null; render(); }
+      }else{
+        // 通常モード：タップで閉じる
+        if(openId===it.id){ openId=null; render(); }
+      }
+    };
 
     if(!editMode) attachSwipe(row,it.id);
 
@@ -407,7 +495,12 @@ function attachSwipe(row,id){
 
   row.onpointerup=()=>{
     if(editMode) return;
-    if(!swiping){ startX=0; return; }
+    // スワイプしていないタップなら、開いている削除を閉じる
+    if(!swiping){
+      if(openId===id){ openId=null; render(); }
+      startX=0;
+      return;
+    }
 
     // 現在位置を見て確定
     const tr=getComputedStyle(row).transform;
@@ -431,6 +524,8 @@ function attachSwipe(row,id){
 
 /* Drag */
 function startDrag(e,wrap){
+  // 並べ替え開始時は削除表示を必ず閉じる
+  if(openEditId){ openEditId=null; render(); }
   dragWrap=wrap;
   const row=wrap.querySelector(".row");
   row.classList.add("dragging");
