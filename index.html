@@ -16,10 +16,7 @@
   --danger:#ff3b30;
   --radius:24px;
 
-  /* 削除ボタン幅（CSS/JSで共有） */
   --actionW: 98px;
-
-  /* iOSっぽい戻り（少しバネ感） */
   --spring: cubic-bezier(.2,.95,.2,1.1);
 }
 
@@ -42,7 +39,6 @@ body{
 button, .row{ -webkit-user-select:none; user-select:none; }
 input{ -webkit-user-select:text; user-select:text; }
 
-/* ✅ レイアウト：カードは内容サイズ、＋は下寄せするが “下げすぎない” */
 .phone{
   width:390px;
   min-height:100vh;
@@ -52,7 +48,7 @@ input{ -webkit-user-select:text; user-select:text; }
 }
 
 /* =======================
-   Top Bar（タイトル固定）
+   Top Bar
 ======================= */
 .topbar{
   position:relative;
@@ -100,7 +96,7 @@ input{ -webkit-user-select:text; user-select:text; }
 }
 
 /* =======================
-   Card（内容サイズ + 上限はJSで調整）
+   Card
 ======================= */
 .card{
   background:var(--card);
@@ -108,7 +104,7 @@ input{ -webkit-user-select:text; user-select:text; }
   overflow:auto;
   -webkit-overflow-scrolling:touch;
   overscroll-behavior:contain;
-  flex:0 0 auto; /* ✅ 伸びない＝間延びしない */
+  flex:0 0 auto;
 }
 
 .swipe-wrap{ position:relative; overflow:hidden; width:100%; }
@@ -158,7 +154,6 @@ input{ -webkit-user-select:text; user-select:text; }
   transition:transform .22s var(--spring), filter .12s ease;
   -webkit-touch-callout:none;
 
-  /* 縦スクロールは許可、横スワイプはJSで確定後に抑制 */
   touch-action: pan-y;
 }
 .row:active{ filter:brightness(1.06); }
@@ -221,11 +216,11 @@ input{ -webkit-user-select:text; user-select:text; }
 }
 
 /* =======================
-   Spacer（✅ ＋を下に寄せるが “下げすぎない”）
+   Spacer
 ======================= */
 .spacer{
   flex:1 1 auto;
-  max-height:80px;  /* ✅ 下げすぎ防止：ここで調整 */
+  max-height:80px;
 }
 
 /* =======================
@@ -268,7 +263,7 @@ input{ -webkit-user-select:text; user-select:text; }
 }
 
 /* =======================
-   ✅ 改善③：並べ替えプレースホルダ
+   Placeholder
 ======================= */
 .placeholder{
   background:rgba(255,255,255,.06);
@@ -277,7 +272,7 @@ input{ -webkit-user-select:text; user-select:text; }
 }
 
 /* =======================
-   ✅ 改善②：iOS風モーダル（confirm置き換え）
+   Modal (A11y強化)
 ======================= */
 .modal{
   position:fixed;
@@ -352,6 +347,15 @@ input{ -webkit-user-select:text; user-select:text; }
   border-radius: 16px;
   overflow:hidden;
 }
+
+/* A11y: スクリーンリーダー用 */
+.sr-only{
+  position:absolute !important;
+  width:1px;height:1px;
+  padding:0;margin:-1px;
+  overflow:hidden;clip:rect(0,0,0,0);
+  white-space:nowrap;border:0;
+}
 </style>
 </head>
 
@@ -373,7 +377,6 @@ input{ -webkit-user-select:text; user-select:text; }
 
   <div class="card" id="list" role="list" aria-label="買い物リスト"></div>
 
-  <!-- ✅ ＋を下に寄せるが下げすぎないためのスペーサー -->
   <div class="spacer" aria-hidden="true"></div>
 
   <div class="bottom">
@@ -385,8 +388,11 @@ input{ -webkit-user-select:text; user-select:text; }
 
 </div>
 
-<!-- ✅ 改善②：カスタムモーダル -->
-<div class="modal" id="modal" aria-hidden="true" role="dialog" aria-modal="true">
+<!-- ✅ A11y: 状態通知（aria-live） -->
+<div class="sr-only" id="live" aria-live="polite" aria-atomic="true"></div>
+
+<!-- ✅ confirmモーダル（フォーカストラップ/復帰） -->
+<div class="modal" id="modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="modalTitle" aria-describedby="modalMsg">
   <div class="modal-card" role="document">
     <div class="modal-body">
       <h3 class="modal-title" id="modalTitle">確認</h3>
@@ -402,10 +408,8 @@ input{ -webkit-user-select:text; user-select:text; }
 <script>
 /* =======================
    ✅ 改善①：無効化は“モバイル（タッチ）限定”
-   - PCでは右クリック等を殺さない
 ======================= */
 const IS_TOUCH = matchMedia("(pointer: coarse)").matches || "ontouchstart" in window;
-
 if(IS_TOUCH){
   document.addEventListener("contextmenu", e=>e.preventDefault(),{passive:false});
   document.addEventListener("gesturestart", e=>e.preventDefault(),{passive:false});
@@ -424,6 +428,7 @@ const inputWrap= document.getElementById("inputWrap");
 const newText  = document.getElementById("newText");
 const topbar   = document.querySelector(".topbar");
 const bottom   = document.querySelector(".bottom");
+const live     = document.getElementById("live");
 
 /* modal */
 const modal       = document.getElementById("modal");
@@ -435,14 +440,23 @@ const modalOk     = document.getElementById("modalOk");
 /* 幅をCSS変数から取得（JS側も一元化） */
 const ACTION_W = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--actionW"), 10) || 98;
 
+function announce(msg){
+  // aria-live は同一文だと読まれないことがあるので少し揺らす
+  live.textContent = "";
+  setTimeout(()=>{ live.textContent = msg; }, 10);
+}
+
 function uid(){
-  try{
-    if (crypto && crypto.randomUUID) return crypto.randomUUID();
-  }catch{}
+  try{ if (crypto && crypto.randomUUID) return crypto.randomUUID(); }catch{}
   return "id_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2);
 }
 
-const KEY="shopping_list_ios_final_v8";
+/* =======================
+   ✅ 改善③：localStorageキー整理 + 旧キー移行
+======================= */
+const KEY = "shopping_list_ios_v8";
+const OLD_KEYS = ["shopping_list_ios_final_v8"]; // 旧版から自動移行
+
 let items=[];
 let editMode=false;
 
@@ -459,38 +473,63 @@ function layoutCardHeight(){
   const padTop = parseFloat(s.paddingTop) || 0;
   const padBottom = parseFloat(s.paddingBottom) || 0;
 
-  // “＋が下に行きすぎない”分の余白も確保（spacerのmaxを想定）
-  const reserve = 80; // spacer上限と合わせる
+  const reserve = 80;
   const available = window.innerHeight - topbar.offsetHeight - bottom.offsetHeight - padTop - padBottom - reserve;
-
   const maxH = Math.max(180, available - 14);
   list.style.maxHeight = maxH + "px";
 }
-
 window.addEventListener("resize", layoutCardHeight);
 window.addEventListener("orientationchange", layoutCardHeight);
 
 /* =======================
-   Utils: Storage（破損耐性）
+   Storage（破損耐性 + 移行）
 ======================= */
 function save(){
   try{ localStorage.setItem(KEY, JSON.stringify(items)); }catch{}
 }
-function load(){
-  const raw = localStorage.getItem(KEY);
-  if(!raw){ items=[]; return; }
+function _loadFromKey(k){
+  const raw = localStorage.getItem(k);
+  if(!raw) return null;
   try{
     const parsed = JSON.parse(raw);
-    if(!Array.isArray(parsed)){ items=[]; return; }
-    items = parsed
+    if(!Array.isArray(parsed)) return null;
+    const arr = parsed
       .map(x=>({
         id: (x && typeof x.id==="string" && x.id) ? x.id : uid(),
         text: String(x?.text ?? "").trim(),
         done: !!x?.done
       }))
       .filter(x=>x.text);
+    return arr;
   }catch{
-    items=[];
+    return null;
+  }
+}
+function load(){
+  // 新キー優先
+  let loaded = _loadFromKey(KEY);
+
+  // 新キーが無ければ旧キーを探索して移行
+  if(!loaded){
+    for(const k of OLD_KEYS){
+      const old = _loadFromKey(k);
+      if(old){
+        loaded = old;
+        // 移行保存
+        items = loaded;
+        save();
+        try{ localStorage.removeItem(k); }catch{}
+        announce("データを新形式に移行しました");
+        return;
+      }
+    }
+  }
+
+  if(loaded){
+    items = loaded;
+  }else{
+    items = [];
+    // 新キーが壊れてた場合は消しておく
     try{ localStorage.removeItem(KEY); }catch{}
   }
 }
@@ -504,6 +543,7 @@ function rowEl(id){ const w=wrapEl(id); return w ? w.querySelector(".row") : nul
 function setRowX(id, x){
   const row = rowEl(id);
   if(!row) return;
+  row._x = x; // ✅ 改善②：現在値を保持（matrix解析しない）
   row.style.transform = `translateX(${x}px)`;
 }
 
@@ -528,22 +568,28 @@ function closeAllSwipe(){
 }
 
 /* =======================
-   ✅ 改善②：iOS風 confirm モーダル
+   ✅ 改善④：モーダル（フォーカストラップ/復帰）
 ======================= */
 let _modalResolver = null;
+let _modalPrevFocus = null;
+
+function _focusablesInModal(){
+  return [...modal.querySelectorAll('button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])')]
+    .filter(el => !el.disabled && el.offsetParent !== null);
+}
 
 function showConfirm({title="確認", message="よろしいですか？", okText="OK", cancelText="キャンセル", danger=false}){
+  _modalPrevFocus = document.activeElement;
+
   modalTitle.textContent = title;
   modalMsg.textContent = message;
   modalOk.textContent = okText;
   modalCancel.textContent = cancelText;
-
   modalOk.classList.toggle("danger", !!danger);
 
   modal.classList.add("show");
   modal.setAttribute("aria-hidden","false");
 
-  // フォーカス（キーボード操作の最低限）
   setTimeout(()=>{ modalCancel.focus?.(); }, 0);
 
   return new Promise(resolve=>{
@@ -556,17 +602,48 @@ function hideConfirm(val){
   modal.setAttribute("aria-hidden","true");
   const r = _modalResolver;
   _modalResolver = null;
+
+  // フォーカス復帰
+  try{ _modalPrevFocus?.focus?.(); }catch{}
+  _modalPrevFocus = null;
+
   if(r) r(!!val);
 }
 
 modalCancel.addEventListener("click", ()=>hideConfirm(false));
 modalOk.addEventListener("click", ()=>hideConfirm(true));
-modal.addEventListener("click", (e)=>{
-  if(e.target === modal) hideConfirm(false);
-});
+modal.addEventListener("click", (e)=>{ if(e.target === modal) hideConfirm(false); });
+
 document.addEventListener("keydown",(e)=>{
   if(!modal.classList.contains("show")) return;
-  if(e.key==="Escape") hideConfirm(false);
+
+  if(e.key==="Escape"){
+    e.preventDefault();
+    hideConfirm(false);
+    return;
+  }
+
+  // フォーカストラップ
+  if(e.key==="Tab"){
+    const f = _focusablesInModal();
+    if(!f.length) return;
+
+    const first = f[0];
+    const last = f[f.length-1];
+    const active = document.activeElement;
+
+    if(e.shiftKey){
+      if(active === first || !modal.contains(active)){
+        e.preventDefault();
+        last.focus();
+      }
+    }else{
+      if(active === last){
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  }
 });
 
 /* =======================
@@ -578,6 +655,7 @@ editBtn.addEventListener("click", ()=>{
   app.classList.toggle("edit",editMode);
   editBtn.textContent = editMode ? "✓" : "編集";
   editBtn.setAttribute("aria-label", editMode ? "編集モード解除" : "編集モード切り替え");
+  announce(editMode ? "編集モードにしました" : "編集モードを終了しました");
 
   list.querySelectorAll(".swipe-wrap").forEach(w=>{
     const row = w.querySelector(".row");
@@ -591,7 +669,7 @@ editBtn.addEventListener("click", ()=>{
 
     w.classList.remove("show-actions");
     row.style.transition = "transform .22s var(--spring)";
-    row.style.transform = "translateX(0)";
+    setRowX(w.dataset.id, 0);
     row._justSwiped = false;
   });
 
@@ -615,18 +693,20 @@ trashBtn.addEventListener("click", async ()=>{
   openId=null;
   openEditId=null;
   layoutCardHeight();
+  announce("リストを全削除しました");
 });
 
-/* ✅ 共有：テキストだけ */
+/* 共有：テキストだけ */
 shareBtn.addEventListener("click", async ()=>{
   const text=items.map(i=>`${i.done?"☑":"☐"} ${i.text}`).join("\n");
   try{
     if(navigator.share){
       await navigator.share({title:"買い物リスト",text});
+      announce("共有しました");
     }else{
       await navigator.clipboard.writeText(text);
-      // confirm/alertより軽い方がよいが、ここは既存通り最低限
       alert("コピーしました");
+      announce("クリップボードにコピーしました");
     }
   }catch{}
 });
@@ -645,6 +725,7 @@ newText.addEventListener("keydown", e=>{
     inputWrap.classList.remove("show");
     newText.value="";
     layoutCardHeight();
+    announce("入力をキャンセルしました");
   }
 });
 
@@ -660,6 +741,7 @@ function commitAdd(){
 
   list.appendChild(buildRow(it));
   layoutCardHeight();
+  announce(`追加しました: ${it.text}`);
 }
 
 /* =======================
@@ -703,6 +785,7 @@ function buildRow(it){
   // row
   const row=document.createElement("div");
   row.className="row";
+  row._x = 0; // ✅ 改善②：現在Xを保持
   row.style.transform="translateX(0)";
   row._justSwiped = false;
 
@@ -765,19 +848,42 @@ function buildRow(it){
   });
   row.appendChild(text);
 
-  // handle
+  // handle（✅ 改善④：キーボード並べ替え）
   const right=document.createElement("div");
   right.className="rightSlot";
   const handle=document.createElement("div");
   handle.className="handle";
   handle.textContent="≡";
-  handle.setAttribute("aria-label","並べ替えハンドル");
+  handle.setAttribute("role","button");
+  handle.setAttribute("tabindex","0");
+  handle.setAttribute("aria-label","並べ替えハンドル（Alt+↑/↓でも移動できます）");
+
   handle.addEventListener("pointerdown", e=>{
     if(!editMode) return;
     e.preventDefault();
     e.stopPropagation();
     startDrag(e, wrap);
   });
+
+  handle.addEventListener("keydown", (e)=>{
+    if(!editMode) return;
+
+    // Alt + ↑/↓ で行移動（アクセシビリティ用）
+    if(e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")){
+      e.preventDefault();
+      const dir = (e.key === "ArrowUp") ? -1 : 1;
+      const moved = moveItemById(it.id, dir);
+      if(moved){
+        announce(`移動しました: ${it.text}`);
+        // 移動後もハンドルにフォーカス保持
+        setTimeout(()=>{
+          const w = wrapEl(it.id);
+          w?.querySelector(".handle")?.focus?.();
+        }, 0);
+      }
+    }
+  });
+
   right.appendChild(handle);
   row.appendChild(right);
 
@@ -829,9 +935,12 @@ function toggleDone(id,val){
 
   const cb = w.querySelector(".cb");
   if(cb) cb.checked = it.done;
+
+  announce(`${it.text} を ${it.done ? "完了" : "未完了"} にしました`);
 }
 
 function removeOne(id){
+  const it = items.find(x=>x.id===id);
   items = items.filter(x=>x.id!==id);
   save();
 
@@ -842,10 +951,34 @@ function removeOne(id){
   if(openEditId===id) openEditId=null;
 
   layoutCardHeight();
+  if(it) announce(`削除しました: ${it.text}`);
+}
+
+/* ✅ 改善④：キーボード並べ替え用（Alt+↑/↓） */
+function moveItemById(id, dir){
+  const idx = items.findIndex(x=>x.id===id);
+  if(idx < 0) return false;
+  const next = idx + dir;
+  if(next < 0 || next >= items.length) return false;
+
+  // items入れ替え
+  const tmp = items[idx];
+  items[idx] = items[next];
+  items[next] = tmp;
+  save();
+
+  // DOM入れ替え（簡易に再描画でもOKだが、軽く入れ替え）
+  const a = wrapEl(items[idx].id);
+  const b = wrapEl(items[next].id);
+  // この時点でitemsは入れ替え後なので、DOM側は「現在の順」に合わせて並べ直すのが確実
+  // 小規模なので再描画で確実性優先
+  renderAll();
+  layoutCardHeight();
+  return true;
 }
 
 /* =======================
-   ✅ スワイプ削除（現状の“効きやすい”版そのまま）
+   ✅ スワイプ削除（✅ 改善②：matrix解析を廃止）
 ======================= */
 function attachSwipe(row,id){
   let startX=0, startY=0;
@@ -871,6 +1004,9 @@ function attachSwipe(row,id){
     baseX = (openId===id) ? -ACTION_W : 0;
     row.style.transition="none";
 
+    // 現在値を同期
+    row._x = baseX;
+
     try{ row.setPointerCapture(pid); }catch{}
   }, {passive:true});
 
@@ -890,6 +1026,7 @@ function attachSwipe(row,id){
 
     let x = baseX + dx;
     x = Math.min(0, Math.max(-ACTION_W, x));
+    row._x = x; // ✅ 改善②
     row.style.transform = `translateX(${x}px)`;
   }, {passive:false});
 
@@ -899,26 +1036,17 @@ function attachSwipe(row,id){
     if(!swiping){
       if(openId===id){
         row.style.transition="transform .22s var(--spring)";
-        row.style.transform="translateX(0)";
+        setRowX(id, 0);
         openId=null;
       }
       active=false;
       return;
     }
 
-    const tr=getComputedStyle(row).transform;
-    let x=0;
-    if(tr && tr!=="none"){
-      const m=tr.match(/matrix\(([^)]+)\)/);
-      if(m){
-        const parts=m[1].split(",").map(v=>parseFloat(v));
-        x=parts[4]||0;
-      }
-    }
-
     row.style.transition="transform .22s var(--spring)";
+    const x = row._x || 0;  // ✅ 改善②：保持値を使う
     const willOpen = (x <= -ACTION_W/2);
-    row.style.transform = `translateX(${willOpen ? -ACTION_W : 0}px)`;
+    setRowX(id, willOpen ? -ACTION_W : 0);
     openId = willOpen ? id : null;
 
     row._justSwiped = true;
@@ -933,13 +1061,14 @@ function attachSwipe(row,id){
 
 /* =======================
    ✅ 改善③：Drag reorder（プレースホルダ方式）
-   - 位置が急に詰まる感じを解消
-   - ドラッグ中は行が“浮く”
+   ✅ 改善ポイント1：pointermoveをrAFで間引き
 ======================= */
 let placeholder = null;
-let dragRowRect = null;
 let dragOffsetY = 0;
 let dragPointerId = null;
+
+let rafId = null;
+let latestClientY = 0;
 
 function startDrag(e,wrap){
   if(openEditId){
@@ -960,65 +1089,80 @@ function startDrag(e,wrap){
   placeholder.style.height = h + "px";
 
   // 浮かせるための初期情報
-  dragRowRect = wrap.getBoundingClientRect();
-  dragOffsetY = e.clientY - dragRowRect.top;
+  const dragRect = wrap.getBoundingClientRect();
+  dragOffsetY = e.clientY - dragRect.top;
   dragPointerId = e.pointerId;
 
-  // DOM上でプレースホルダに置き換え
+  // DOM上でプレースホルダに置き換え（後ろに一旦置く）
   list.insertBefore(placeholder, wrap.nextSibling);
 
   // wrapをfixedで浮かせる
   const listRect = list.getBoundingClientRect();
   wrap.style.width = listRect.width + "px";
   wrap.classList.add("floating");
-  wrap.style.transform = `translate3d(${listRect.left}px, ${dragRowRect.top}px, 0)`;
+  wrap.style.transform = `translate3d(${listRect.left}px, ${dragRect.top}px, 0)`;
 
-  // pointer capture
   try{ wrap.setPointerCapture(dragPointerId); }catch{}
 
-  const move = (ev)=>{
+  latestClientY = e.clientY;
+
+  const applyMove = ()=>{
+    rafId = null;
     if(!dragWrap) return;
 
-    ev.preventDefault();
-
     const listRect2 = list.getBoundingClientRect();
-    const y = ev.clientY - dragOffsetY;
+    const y = latestClientY - dragOffsetY;
 
-    // 画面内で浮かせて追従
     dragWrap.style.transform = `translate3d(${listRect2.left}px, ${y}px, 0)`;
 
     // placeholder の挿入位置更新
-    const after = getAfterForPlaceholder(ev.clientY);
+    const after = getAfterForPlaceholder(latestClientY);
     if(after === null){
-      // 末尾
       list.appendChild(placeholder);
     }else{
       list.insertBefore(placeholder, after);
     }
 
-    // 自動スクロール（カード内スクロールを少しだけ補助）
-    autoScrollWithinList(ev.clientY);
+    autoScrollWithinList(latestClientY);
+  };
+
+  const move = (ev)=>{
+    if(!dragWrap) return;
+    ev.preventDefault();
+
+    latestClientY = ev.clientY;
+
+    // ✅ 改善ポイント1：rAFで間引き
+    if(rafId) return;
+    rafId = requestAnimationFrame(applyMove);
   };
 
   const up = ()=>{
     if(!dragWrap) return;
 
-    // placeholder位置に戻す
+    if(rafId){
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+
     list.insertBefore(dragWrap, placeholder);
     placeholder.remove();
     placeholder = null;
 
-    // styles reset
     dragWrap.classList.remove("floating");
     dragWrap.style.transform = "";
     dragWrap.style.width = "";
 
     row.classList.remove("dragging");
+    const movedId = dragWrap.dataset.id;
+
     dragWrap = null;
-    dragRowRect = null;
     dragPointerId = null;
 
     persistOrder();
+
+    const movedItem = items.find(x=>x.id===movedId);
+    if(movedItem) announce(`並べ替えました: ${movedItem.text}`);
 
     window.removeEventListener("pointermove", move, true);
     window.removeEventListener("pointerup", up, true);
@@ -1047,8 +1191,8 @@ function getAfterForPlaceholder(y){
 
 function autoScrollWithinList(pointerY){
   const rect = list.getBoundingClientRect();
-  const edge = 36;         // 端からこの距離でスクロール開始
-  const speed = 10;        // スクロール速度
+  const edge = 36;
+  const speed = 10;
 
   if(pointerY < rect.top + edge){
     list.scrollTop -= speed;
