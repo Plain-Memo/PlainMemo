@@ -84,10 +84,10 @@ input{ -webkit-user-select:text; user-select:text; }
   border:1px solid rgba(255,255,255,.16);
   background:rgba(255,255,255,.10);
   color:var(--accent);
-  padding:12px 18px;
-  font-weight:900;
-  font-size:18px;
-  min-height:52px;
+  padding:10px 14px;
+  font-weight:700;
+  font-size:15px;
+  min-height:44px;
   transition:transform .12s ease, filter .12s ease;
 }
 .iconbtn:active, .editbtn:active{
@@ -272,8 +272,7 @@ input{ -webkit-user-select:text; user-select:text; }
 }
 
 /* =======================
-   Modal (A11y強化)
-   ※ 個別削除では使わず、「全削除」だけで利用
+   Modal（全削除のみ）
 ======================= */
 .modal{
   position:fixed;
@@ -353,7 +352,7 @@ input{ -webkit-user-select:text; user-select:text; }
 .sr-only{
   position:absolute !important;
   width:1px;height:1px;
-  padding:0;margin:-1px;
+  padding:0;margin:0;
   overflow:hidden;clip:rect(0,0,0,0);
   white-space:nowrap;border:0;
 }
@@ -365,7 +364,7 @@ input{ -webkit-user-select:text; user-select:text; }
 
   <div class="topbar">
     <div class="top-left">
-      <button class="iconbtn" id="trashBtn" aria-label="全削除">🗑</button>
+      <button class="iconbtn" id="trashBtn" aria-label="全削除">全削除</button>
       <button class="editbtn" id="editBtn" aria-label="編集モード切り替え">編集</button>
     </div>
 
@@ -475,6 +474,14 @@ function wrapEl(id){ return dom.list.querySelector(`.swipe-wrap[data-id="${CSS.e
 function rowEl(id){ const w=wrapEl(id); return w ? w.querySelector(".row") : null; }
 function getItem(id){ return state.items.find(x=>x.id===id) || null; }
 
+function arraysEqual(a,b){
+  if(a.length !== b.length) return false;
+  for(let i=0;i<a.length;i++){
+    if(a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
 /* =======================
    Layout
 ======================= */
@@ -495,8 +502,8 @@ window.addEventListener("orientationchange", layoutCardHeight);
    Storage
 ======================= */
 const STORAGE = (() => {
-  const KEY = "shopping_list_ios_v9b";
-  const OLD_KEYS = ["shopping_list_ios_v9", "shopping_list_ios_v8", "shopping_list_ios_final_v8"];
+  const KEY = "shopping_list_ios_v9d"; // ← persistOrder強化版キー
+  const OLD_KEYS = ["shopping_list_ios_v9c","shopping_list_ios_v9b","shopping_list_ios_v9","shopping_list_ios_v8","shopping_list_ios_final_v8"];
 
   function save(){
     try{ localStorage.setItem(KEY, JSON.stringify(state.items)); }catch{}
@@ -654,13 +661,12 @@ function closeOpenIfDifferent(id){
 }
 
 /* =======================
-   ✅ 個別削除：確認なし（即削除）
+   個別削除：確認なし（即削除）
 ======================= */
 function removeOne(id){
   const it = getItem(id);
   if(!it) return;
 
-  // 開き状態を閉じる
   if(state.openId === id){ setRowX(id, 0); state.openId = null; }
   if(state.openEditId === id){
     const w = wrapEl(id);
@@ -669,11 +675,9 @@ function removeOne(id){
     state.openEditId = null;
   }
 
-  // state
   state.items = state.items.filter(x=>x.id!==id);
   STORAGE.save();
 
-  // DOM
   const w = wrapEl(id);
   if(w) w.remove();
 
@@ -682,7 +686,7 @@ function removeOne(id){
 }
 
 /* =======================
-   State ops
+   Done toggle
 ======================= */
 function toggleDone(id,val){
   if(state.editMode) return;
@@ -704,14 +708,15 @@ function toggleDone(id,val){
   announce(`${it.text} を ${it.done ? "完了" : "未完了"} にしました`);
 }
 
-/* =======================
-   DOM差分 swap（Alt+↑/↓）
-======================= */
+/* ======================================================
+   swapItemsAndDomById（隣接・非隣接どちらも安全）
+====================================================== */
 function swapItemsAndDomById(idA, idB){
   const iA = state.items.findIndex(x=>x.id===idA);
   const iB = state.items.findIndex(x=>x.id===idB);
   if(iA < 0 || iB < 0) return false;
 
+  // state swap
   const tmp = state.items[iA];
   state.items[iA] = state.items[iB];
   state.items[iB] = tmp;
@@ -722,11 +727,18 @@ function swapItemsAndDomById(idA, idB){
   if(!elA || !elB) return false;
 
   const parent = dom.list;
-  const nextA = elA.nextSibling;
-  const nextB = elB.nextSibling;
 
-  parent.insertBefore(elA, nextB);
-  parent.insertBefore(elB, nextA);
+  const aNext = elA.nextSibling;
+  const bNext = elB.nextSibling;
+
+  if(aNext === elB){
+    parent.insertBefore(elB, elA);
+  }else if(bNext === elA){
+    parent.insertBefore(elA, elB);
+  }else{
+    parent.insertBefore(elA, bNext);
+    parent.insertBefore(elB, aNext);
+  }
 
   return true;
 }
@@ -739,6 +751,7 @@ function moveItemById(id, dir){
 
   const idA = state.items[idx].id;
   const idB = state.items[next].id;
+
   const ok = swapItemsAndDomById(idA, idB);
   if(ok) layoutCardHeight();
   return ok;
@@ -789,7 +802,6 @@ function buildRow(it){
   minus.style.display = state.editMode ? "inline-flex" : "none";
   minus.setAttribute("aria-label", `削除メニュー: ${it.text}`);
 
-  // 編集モード：−で「削除ボタン表示」トグル（その後の削除は即削除）
   minus.addEventListener("click", ()=>{
     if(!state.editMode) return;
 
@@ -1071,7 +1083,7 @@ function startDrag(e,wrap){
     state.dragWrap = null;
     state.dragPointerId = null;
 
-    persistOrder();
+    persistOrder(); // ← ここが強化されてます
 
     const movedItem = getItem(movedId);
     if(movedItem) announce(`並べ替えました: ${movedItem.text}`);
@@ -1113,11 +1125,79 @@ function autoScrollWithinList(pointerY){
   }
 }
 
+/* ======================================================
+   ✅ 強化版：persistOrder（DOM順とstate順のズレ検出＋修復）
+====================================================== */
 function persistOrder(){
-  const ordered=[...dom.list.querySelectorAll(".swipe-wrap")].map(w=>w.dataset.id);
-  const map=new Map(state.items.map(i=>[i.id,i]));
-  state.items = ordered.map(id=>map.get(id)).filter(Boolean);
+  const domIdsRaw = [...dom.list.querySelectorAll(".swipe-wrap")].map(w=>w.dataset.id);
+  const stateIdsRaw = state.items.map(i=>i.id);
+
+  // 1) DOM側の重複除去（異常時の保険）
+  const seen = new Set();
+  const domIds = [];
+  for(const id of domIdsRaw){
+    if(!id) continue;
+    if(seen.has(id)) continue;
+    seen.add(id);
+    domIds.push(id);
+  }
+
+  // 2) state側も重複除去（通常起きないが保険）
+  const seenS = new Set();
+  const stateIds = [];
+  for(const id of stateIdsRaw){
+    if(!id) continue;
+    if(seenS.has(id)) continue;
+    seenS.add(id);
+    stateIds.push(id);
+  }
+
+  const isSame = arraysEqual(domIds, stateIds);
+
+  // state map
+  const map = new Map(state.items.map(i=>[i.id,i]));
+
+  // 3) DOMにあるがstateにないID（未知）を検出（通常は0のはず）
+  const unknownInDom = domIds.filter(id => !map.has(id));
+
+  // 4) stateにあるがDOMにないID（欠落）を検出
+  const missingInDom = state.items.map(i=>i.id).filter(id => !domIds.includes(id));
+
+  // 5) 新しい順序を安全に構築
+  //    - DOM順に並べる（stateに存在するものだけ）
+  //    - DOMに欠落していたstate要素は末尾に残す（データ損失防止）
+  const orderedFromDom = domIds.map(id => map.get(id)).filter(Boolean);
+  const tail = missingInDom.map(id => map.get(id)).filter(Boolean);
+  const nextItems = orderedFromDom.concat(tail);
+
+  // 6) 何も変わらないなら保存不要（ただし未知IDがDOMにいたらDOM側修復もあり得る）
+  //    今回は「事故りにくさ」を優先して、ズレ/異常があれば保存＆必要ならDOMも再同期。
+  const hasAnomaly = !isSame || unknownInDom.length > 0 || missingInDom.length > 0 || domIdsRaw.length !== domIds.length;
+
+  if(!hasAnomaly){
+    // 通常ケース：DOM順＝state順なので、最低限保存だけ（ドラッグで順序変わってる時はここに来ない）
+    // ただし、ドラッグはDOMが動いた後に呼ばれるので、通常は isSame=false になり hasAnomaly=true で下に行きます
+    state.items = nextItems;
+    STORAGE.save();
+    return;
+  }
+
+  // 7) stateを更新＆保存
+  state.items = nextItems;
   STORAGE.save();
+
+  // 8) DOMに未知IDが居た/欠落があった場合、表示順を再同期（静かに整える）
+  //    ここで renderAll するとドラッグ直後でも見た目と内部がズレない
+  if(unknownInDom.length > 0 || missingInDom.length > 0){
+    renderAll();
+  }
+
+  // 9) 任意：ユーザー通知（静かにしたいならこの行をコメントアウト）
+  //    事故っぽいときだけ通知するなら条件を強めてもOK
+  //    例：if(unknownInDom.length || missingInDom.length) announce("順序を同期しました");
+  if(unknownInDom.length || missingInDom.length){
+    announce("順序を同期しました");
+  }
 }
 
 /* =======================
@@ -1127,7 +1207,7 @@ dom.editBtn.addEventListener("click", ()=>{
   closeAllSwipe();
   state.editMode=!state.editMode;
   dom.app.classList.toggle("edit",state.editMode);
-  dom.editBtn.textContent = state.editMode ? "✓" : "編集";
+  dom.editBtn.textContent = state.editMode ? "完了" : "編集";
   dom.editBtn.setAttribute("aria-label", state.editMode ? "編集モード解除" : "編集モード切り替え");
   announce(state.editMode ? "編集モードにしました" : "編集モードを終了しました");
 
